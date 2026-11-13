@@ -96,6 +96,11 @@ hide the external-app sidebar/search filters and adoption actions. Managed apps 
 unaffected, and no apps are changed or removed. Turning it back on rescans locally;
 no catalog download is required.
 
+**Offer Manage with Homebrew**, in the same section, is also enabled by default.
+Disable only this setting to keep external-app detection, status, filters, and
+counts, but show **Open** instead of offering Homebrew management on external app
+cards. Disabling it also prevents an already-open confirmation from starting a reinstall.
+
 Apps found in `/Applications`, `~/Applications`, or your custom app directory that are
 not tracked by the selected Homebrew appear as **Installed externally**. Detection uses
 the cask's expected app bundle names (including renamed targets), with the display name
@@ -103,7 +108,7 @@ as a fallback when no app artifact is available. Non-app casks are not inferred 
 package receipts or executables.
 
 Use the **Installed externally** sidebar item or search-menu filter to find these apps.
-Choose **Adopt with Homebrew** on a card to review the exact command before continuing:
+Choose **Manage with Homebrew** on a card to review the exact command before continuing:
 `brew install --cask <token> --force` (plus your custom app-directory option, if set).
 This reinstalls the app so Homebrew can track its updates. A successful adoption refreshes
 the managed state; a failed command preserves the previous state and exposes the full

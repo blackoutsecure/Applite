@@ -20,6 +20,7 @@ struct BrewSettingsView: View {
     @AppStorage(Preferences.brewPathOption) var brewPathOption
     @AppStorage(Preferences.includeCasksFromTaps) var includeCasksFromTaps
     @AppStorage(Preferences.detectExternallyInstalledApps) var detectExternallyInstalledApps
+    @AppStorage(Preferences.offerHomebrewManagement) var offerHomebrewManagement
     @AppStorage(Preferences.annexUpdateFrequency) var annexUpdateFrequency
 
     /// Applite's own annex brew is the selected one.
@@ -175,11 +176,21 @@ struct BrewSettingsView: View {
             Toggle(isOn: $detectExternallyInstalledApps) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Detect externally installed apps")
-                    Text("Find apps installed outside Homebrew and offer to adopt them. Turning this off hides external app status and filters without changing your apps.")
+                    Text("Find apps installed outside Homebrew. Turning this off hides external app status and filters without changing your apps.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
+
+            Toggle(isOn: $offerHomebrewManagement) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Offer Manage with Homebrew")
+                    Text("Show \"Manage with Homebrew\" for externally installed apps. Turning this off keeps detection enabled and does not change installed apps.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .disabled(!detectExternallyInstalledApps)
         }
     }
 

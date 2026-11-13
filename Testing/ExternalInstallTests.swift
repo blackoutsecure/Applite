@@ -133,6 +133,7 @@ enum ExternalInstallTests {
         let defaults = UserDefaults.standard
         defer { defaults.removePersistentDomain(forName: "dev.applite.ExternalInstallTests") }
         defaults.removeObject(forKey: Preferences.detectExternallyInstalledApps.name)
+        defaults.removeObject(forKey: Preferences.offerHomebrewManagement.name)
         defaults.setValue(true, for: Preferences.appdirOn)
         defaults.setValue("/tmp/Apps with 'quotes'", for: Preferences.appdirPath)
         let arguments = BrewService.installArguments(fullToken: tapRecord.fullToken)
@@ -143,15 +144,31 @@ enum ExternalInstallTests {
         let manager = CaskManager(registry: registry)
         manager.confirmAdoption(tapVM)
         let confirmation = manager.alert.current!
-        precondition(confirmation.title == "Adopt app into Homebrew management?")
+        precondition(confirmation.title == "Manage this app with Homebrew?")
+        precondition(confirmation.actions.first?.title == "Manage with Homebrew")
         precondition(confirmation.message.contains(
-            "This will reinstall the app via Homebrew cask so updates are tracked by Homebrew."
+            "This will reinstall the app via Homebrew so future updates can be managed here."
         ))
         precondition(confirmation.message.contains(
             "brew install --cask example/tap/sample --force '--appdir=/tmp/Apps with '\\''quotes'\\'''"
         ))
         precondition(manager.activeTasks.isEmpty)
         precondition(tapVM.installationState == .externalInstalled)
+
+        // Hiding management offers must not turn off detection or let an old confirmation install.
+        defaults.setValue(false, for: Preferences.offerHomebrewManagement)
+        let managementDisabled = CaskManager(registry: registry)
+        managementDisabled.confirmAdoption(tapVM)
+        precondition(managementDisabled.alert.current == nil)
+        confirmation.actions.first?.handler?()
+        precondition(manager.activeTasks.isEmpty)
+        precondition(tapVM.installationState == .externalInstalled)
+        precondition(registry.externalInstalledCount == 1)
+        precondition(vm.installationState == .installed)
+        defaults.setValue(true, for: Preferences.offerHomebrewManagement)
+        let managementEnabled = CaskManager(registry: registry)
+        managementEnabled.confirmAdoption(tapVM)
+        precondition(managementEnabled.alert.current?.title == "Manage this app with Homebrew?")
 
         // Disabling takes effect immediately, including a confirmation opened before the change.
         defaults.setValue(false, for: Preferences.detectExternallyInstalledApps)

@@ -8,6 +8,8 @@ renamed targets), v1 database migration/FTS preservation, managed/external/missi
 state precedence, full-token identity, external filter membership/counts, command
 confirmation/quoting, the default-enabled detection setting and immediate disable
 guards (including pending confirmations), and queued adoption success/failure with stderr capture.
+The separate management-offer setting is enabled by default; disabling it blocks
+new and already-open management confirmations without clearing external detection.
 They do not launch Applite, run real Homebrew, modify installed apps, show notification
 permission prompts, or use your Applite preferences/database.
 
@@ -33,6 +35,10 @@ filter: the filters should disappear, navigation should leave the hidden externa
 list, and external status/counts should clear immediately without changing managed
 apps. Re-enable it and check that local external apps are rediscovered without a
 catalog download.
+
+Disable **Offer Manage with Homebrew** separately: external status, filters, and
+counts should remain, while external cards show **Open** instead of **Manage with
+Homebrew**. Re-enable it to restore the management offer.
 
 ## Guided VM harness
 

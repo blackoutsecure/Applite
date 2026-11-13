@@ -143,6 +143,7 @@ final class CaskManager {
 
     func confirmAdoption(_ cask: CaskViewModel) {
         guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps),
+              UserDefaults.standard.value(for: Preferences.offerHomebrewManagement),
               cask.isInstalledExternally, !(cask.warning?.isDisabled ?? false) else { return }
         let arguments = BrewService.installArguments(fullToken: cask.fullToken)
         let preview = (["brew"] + arguments).map { argument in
@@ -151,7 +152,7 @@ final class CaskManager {
             }
             return "'" + argument.replacingOccurrences(of: "'", with: "'\\''") + "'"
         }.joined(separator: " ")
-        var message = String(localized: "This will reinstall the app via Homebrew cask so updates are tracked by Homebrew.")
+        var message = String(localized: "This will reinstall the app via Homebrew so future updates can be managed here.")
         message += "\n\n\(preview)"
         if let warning = cask.warning {
             let detail: String
@@ -166,12 +167,13 @@ final class CaskManager {
             message += "\n\n" + detail.limitedToLines(5, suffix: "...")
         }
         alert.show(
-            title: "Adopt app into Homebrew management?",
+            title: "Manage this app with Homebrew?",
             message: message,
             actions: [
-                AppAlert.Action("Adopt with Homebrew") { [weak self] in
+                AppAlert.Action("Manage with Homebrew") { [weak self] in
                     guard let self,
                           UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps),
+                          UserDefaults.standard.value(for: Preferences.offerHomebrewManagement),
                           cask.isInstalledExternally else { return }
                     self.brewService.install(cask, arguments: arguments) {
                         try await self.dataLoader.refreshInstalled()

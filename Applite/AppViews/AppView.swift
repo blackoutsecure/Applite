@@ -24,6 +24,7 @@ struct AppView: View {
     @Environment(\.openWindow) var openWindow
 
     @Environment(CaskManager.self) var caskManager
+    @AppStorage(Preferences.offerHomebrewManagement) private var offerHomebrewManagement
 
     // Alerts
     @State var failureAlertMessage = ""
@@ -209,13 +210,17 @@ struct AppView: View {
             if cask.isInstalled {
                 OpenButton(cask: cask)
             } else if cask.isInstalledExternally {
-                Button("Adopt with Homebrew") {
-                    caskManager.confirmAdoption(cask)
+                if offerHomebrewManagement {
+                    Button("Manage with Homebrew") {
+                        caskManager.confirmAdoption(cask)
+                    }
+                    .cardActionPill()
+                    .frame(maxWidth: 140)
+                    .disabled(cask.warning?.isDisabled ?? false)
+                    .help("Reinstall with Homebrew so this app is tracked and updated by Homebrew.")
+                } else {
+                    OpenButton(cask: cask)
                 }
-                .cardActionPill()
-                .frame(maxWidth: 140)
-                .disabled(cask.warning?.isDisabled ?? false)
-                .help("Reinstall with Homebrew so this app is tracked and updated by Homebrew.")
             } else {
                 DownloadButton(cask: cask)
             }
