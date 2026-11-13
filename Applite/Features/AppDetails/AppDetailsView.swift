@@ -13,7 +13,8 @@ struct AppDetailsView: View {
     @Environment(CaskManager.self) private var caskManager
 
     @State private var loadState: LoadState = .loading
-    @State private var retryCount = 0
+    @State private var homebrewRetryCount = 0
+    @State private var localRetryCount = 0
     @State private var localState: LocalState = .loading
 
     private enum LoadState {
@@ -103,7 +104,7 @@ struct AppDetailsView: View {
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                         Button("Try Again") {
-                            retryCount += 1
+                            homebrewRetryCount += 1
                         }
                     }
                 }
@@ -131,12 +132,13 @@ struct AppDetailsView: View {
     }
 
     private var infoKey: [String] {
-        [cask.fullToken, String(cask.isInstalled), String(retryCount)]
+        [cask.fullToken, String(cask.isInstalled), String(cask.metadataRevision), String(homebrewRetryCount)]
     }
 
     private var localKey: [String] {
         [cask.fullToken, String(cask.isInstalled), cask.externalAppURL?.path ?? "",
-         cask.protectedAppInstallation?.url.path ?? "", String(retryCount)]
+         cask.protectedAppInstallation?.url.path ?? "", cask.installedBundleURL?.path ?? "",
+         String(cask.metadataRevision), String(localRetryCount)]
     }
 
     private var brewInfo: CaskAdditionalInfo? {
@@ -221,7 +223,7 @@ struct AppDetailsView: View {
                     if key == localKey {
                         Label("Couldn't read installed app information", systemImage: "exclamationmark.triangle")
                         Text(message).foregroundStyle(.secondary).textSelection(.enabled)
-                        Button("Try Again") { retryCount += 1 }
+                        Button("Try Again") { localRetryCount += 1 }
                     }
                 case .loaded(let key, let info):
                     if key == localKey {
@@ -332,7 +334,7 @@ struct AppDetailsView: View {
         }
         localState = .loading
         let key = localKey
-        let knownURL = cask.protectedAppInstallation?.url ?? cask.externalAppURL
+        let knownURL = cask.protectedAppInstallation?.url ?? cask.externalAppURL ?? cask.installedBundleURL
         let token = cask.token
         let name = cask.name
         do {

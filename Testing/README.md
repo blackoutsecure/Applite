@@ -85,6 +85,10 @@ and compare its installed version/build and location with its bundle's Info.plis
 The installed status and Installation section should identify its detected primary
 manager, such as Microsoft Intune; an unrecognized external source should be Unknown.
 Homebrew receipt status and any additional detected sources remain separate.
+Retry a failed Homebrew lookup while local facts are loaded, and retry a local
+metadata error while Homebrew details are loaded: the unaffected source must stay
+visible and must not reload. Successful single and bulk update/reinstall fixtures
+advance metadata revisions and replace bundle versions without changing Installed.
 Outdated must say Unknown even if the Homebrew catalog has a different version.
 Check a Homebrew-managed app, an uninstalled app, and a Homebrew lookup failure:
 local information should remain available independently of the lookup. The signing

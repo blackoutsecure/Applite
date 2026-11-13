@@ -139,6 +139,9 @@ Homebrew's `latest` placeholder is not treated as a concrete version.
 Self-updating casks also show Unknown, since their installed app can change
 independently of the Homebrew record. Local information remains visible if the
 Homebrew lookup fails; errors are retryable.
+Local and Homebrew retries are independent: retrying one source leaves the other
+source's successful details visible. Successful single and bulk operations refresh
+details even when the app remains installed.
 Homebrew tokens remain selectable.
 Cmd-click continues to open the app's website instead of the details page.
 

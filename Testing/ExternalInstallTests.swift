@@ -423,6 +423,9 @@ enum ExternalInstallTests {
             echo "fixture uninstalled" ;;
           upgrade|reinstall)
             printf '%s\\n' "$@" > "$fixture_dir/arguments"
+            if [ -f "$fixture_dir/review-bundle-plist" ]; then
+              /usr/bin/plutil -replace CFBundleShortVersionString -string "$(cat "$fixture_dir/review-bundle-version")" "$(cat "$fixture_dir/review-bundle-plist")"
+            fi
             echo "fixture was successfully upgraded!" ;;
           *) echo "Unexpected command" >&2; exit 2 ;;
         esac
@@ -1927,8 +1930,10 @@ enum ExternalInstallTests {
         let managed = adoption.viewModel(for: alias)
         adoption.markExternalInstallations(appURLs: [stable.fullToken: shared], bundleURLs: scan.bundleURLs)
         let service = BrewService(notify: { _, _, _ in }, intuneInventory: { .empty }, artCraftInventory: { .empty })
+        let beforeInstall = managed.metadataRevision
         await service.install(managed, confirmedConfiguration: .current).value
         precondition(managed.isInstalled && !managed.progressState.isFailed && external.isInstalledExternally)
+        precondition(managed.metadataRevision == beforeInstall + 1)
         precondition(adoption.locallyInstalledViewModels == [managed] && adoption.locallyInstalledCount == 1,
                      "A single alias install must immediately replace the external row in the projection")
         adoption.markInstalled(tokens: [])
@@ -1939,8 +1944,49 @@ enum ExternalInstallTests {
         service.installAll([managed])
         _ = try await service.runSerialized { true }
         precondition(managed.isInstalled && !managed.progressState.isFailed)
+        precondition(managed.metadataRevision == beforeInstall + 2)
         precondition(adoption.locallyInstalledViewModels == [managed] && adoption.locallyInstalledCount == 1,
                      "Bulk reconciliation must immediately collapse the old external alias row")
+        let plist = shared.appendingPathComponent("Contents/Info.plist")
+        try fm.createDirectory(at: plist.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try PropertyListSerialization.data(
+            fromPropertyList: ["CFBundleIdentifier": "org.fixture.metadata-refresh", "CFBundleShortVersionString": "1.0"],
+            format: .xml, options: 0
+        ).write(to: plist)
+        let plistMarker = root.appendingPathComponent("review-bundle-plist")
+        let versionMarker = root.appendingPathComponent("review-bundle-version")
+        try plist.path.write(to: plistMarker, atomically: true, encoding: .utf8)
+        defer {
+            try! fm.removeItem(at: plistMarker)
+            try! fm.removeItem(at: versionMarker)
+        }
+        for (index, version) in ["2.0", "3.0", "4.0"].enumerated() {
+            try version.write(to: versionMarker, atomically: true, encoding: .utf8)
+            let revision = managed.metadataRevision
+            if index == 0 {
+                managed.isOutdated = true
+                await service.update(managed).value
+            } else if index == 1 {
+                service.reinstall(managed)
+                _ = try await service.runSerialized { true }
+            } else {
+                service.updateAll([managed])
+                _ = try await service.runSerialized { true }
+            }
+            let metadata = try InstalledAppMetadata.read(at: shared)
+            precondition(!managed.progressState.isFailed && managed.metadataRevision == revision + 1 && metadata.version == version,
+                         "Successful update/reinstall/bulk operations must invalidate details and expose fresh bundle versions")
+        }
+        let revision = managed.metadataRevision
+        let failedMetadata = root.appendingPathComponent("info-fail")
+        try Data().write(to: failedMetadata)
+        await service.update(managed).value
+        precondition(managed.progressState.isFailed && managed.metadataRevision == revision,
+                     "A rejected operation must not masquerade as a successful metadata refresh")
+        try fm.removeItem(at: failedMetadata)
+        service.uninstall(managed)
+        _ = try await service.runSerialized { true }
+        precondition(!managed.isInstalled && managed.metadataRevision == revision + 1)
     }
 
     @MainActor

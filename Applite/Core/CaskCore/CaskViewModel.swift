@@ -68,6 +68,7 @@ final class CaskViewModel {
 
     /// Progress state when installing, updating, or uninstalling
     var progressState: CaskProgressState = .idle
+    private(set) var metadataRevision = 0
 
     // MARK: - Initialization
 
@@ -82,6 +83,10 @@ final class CaskViewModel {
     /// Updates the underlying record (e.g. after a database sync)
     func updateRecord(_ newRecord: CaskRecord) {
         self.record = newRecord
+    }
+
+    func recordSuccessfulOperation() {
+        metadataRevision &+= 1
     }
 
     // MARK: - Computed Properties (forwarding from record)
