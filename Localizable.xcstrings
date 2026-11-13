@@ -11302,7 +11302,8 @@
     },
     "Applite is already running, but its window couldn't be opened. Select Applite in the Dock." : {},
     "Applite is already starting. Please try again in a moment." : {},
-    "Couldn't start Applite" : {}
+    "Couldn't start Applite" : {},
+    "Refreshing app catalog..." : {}
   },
   "version" : "1.1"
 }

@@ -37,6 +37,10 @@ native `openSettings` action, which reuses the Settings window. There is no sepa
 `uninstall-self` scene.
 The app menu's update-check action uses the same navigation model to select Updates
 and focus Settings before invoking the existing updater; its busy-state gate stays intact.
+`ContentView` displays a nonmodal bottom status bar and indeterminate spinner while
+the existing `CaskManager.isRefreshingCatalog` flag is true. It covers the entire
+manual reload, including installed/outdated reconciliation, without fabricating a
+percentage or adding another refresh-state owner.
 
 1. **App Launch**: `ContentView.task(id: bootstrap.attempt)` calls `caskManager.bootstrapAndLoad()`
 2. **First Run**: `HomebrewBootstrap` installs/validates brew; while `bootstrap.needsSetupOverlay` is true, `ContentView` covers the window with the non-dismissable `ComponentsInstallView` modal (`Features/Bootstrap/`). There is no separate onboarding flow — the app opens straight into the main UI

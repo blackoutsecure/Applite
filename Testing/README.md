@@ -30,6 +30,13 @@ tab, and already on Updates. Each request should select and focus **Settings > U
 and start the existing Sparkle check once. While checking, the menu item should be
 disabled. Cancel or dismiss the result; do not install an update during this check.
 
+Choose **Refresh App Catalog** from the app menu. The main window should show a
+spinner and **Refreshing app catalog...** status throughout the existing refresh,
+without replacing the catalog or blocking browsing. The status should disappear
+when the operation finishes, including after a failure; failures must still use the
+existing error alert. Also verify the status appears when a refresh is started
+from the Brew settings refresh prompt.
+
 `applite_test.py` is a **guided** end-to-end test harness. It doesn't automate the
 UI — *you* perform each action in the real Applite window, and after each step the
 script independently verifies the real result via the Homebrew CLI + filesystem

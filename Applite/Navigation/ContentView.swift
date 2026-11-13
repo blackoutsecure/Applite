@@ -46,10 +46,33 @@ struct ContentView: View {
                 setupOverlay
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if caskManager.isRefreshingCatalog {
+                catalogRefreshStatus
+            }
+        }
         // The window's one alert surface, presented once at its root: brew failures, load failures
         // and errors raised by any view in this window queue here (F5/P3-5). Never bind this inside
         // a repeated view — that was the bug it replaces.
         .alertManager(caskManager.alert)
+    }
+
+    private var catalogRefreshStatus: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+                Text("Refreshing app catalog...")
+                    .font(.callout)
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+        }
+        .background(.bar)
+        .accessibilityElement(children: .combine)
     }
 
     private var mainNavigation: some View {

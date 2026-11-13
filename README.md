@@ -101,6 +101,11 @@ The app menu's **Check for Updates...** action selects and opens or focuses
 **Settings > Updates** before starting the existing Sparkle update check.
 It remains disabled while a check is in progress.
 
+Manual app-catalog refreshes show a persistent **Refreshing app catalog...** status
+with an indeterminate spinner in the main window. The existing catalog remains
+available to browse while the refresh runs. No estimated percentage is displayed
+because network requests and Homebrew checks do not share a measurable total.
+
 ## Built With
 
 Swift and SwiftUI, targeting macOS 14 so `@Observable` and `NavigationSplitView` are available without back-deployment shims. No Combine. The cask catalog is a local SQLite database (GRDB.swift, WAL mode) synced from the Homebrew JSON API, with FTS5 and BM25 ranking for full-catalog search. Loading is two-stage: SQLite paints the UI immediately, then `brew list --cask` and `brew outdated --cask` fill in installed and outdated state reactively, so nothing blocks on the brew CLI.
