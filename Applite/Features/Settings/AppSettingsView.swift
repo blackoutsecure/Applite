@@ -15,6 +15,8 @@ struct AppSettingsView: View {
     @AppStorage(Preferences.overrideArtCraftManagement) private var overrideArtCraft
     @AppStorage(Preferences.notificationSuccess) private var notificationOnSuccess
     @AppStorage(Preferences.notificationFailure) private var notificationOnFailure
+    @AppStorage(Preferences.appdirOn) private var appdirOn
+    @AppStorage(Preferences.appdirPath) private var appdirPath
     @State private var previousIncludeCasksFromTaps: Bool?
 
     private var managementSettings: [Bool] {
@@ -48,6 +50,9 @@ struct AppSettingsView: View {
         }
         .onChange(of: managementSettings) { _, _ in
             caskManager.applyAppManagementSettings(surfacingErrorsIn: alert)
+        }
+        .onChange(of: [String(appdirOn), appdirPath]) { _, _ in
+            caskManager.applyExternalAppDetectionSetting(surfacingErrorsIn: alert)
         }
     }
 

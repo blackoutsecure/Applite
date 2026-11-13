@@ -18,6 +18,7 @@ final class CaskDataLoader {
     private let installedService: InstalledCaskService
     private let loadIntuneInventory: IntuneAppDetector.Loader
     private let loadArtCraftInventory: ArtCraftAppDetector.Loader
+    private var externalScanGeneration = 0
 
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier!,
@@ -127,7 +128,16 @@ final class CaskDataLoader {
         try await refreshExternalInstallations()
     }
 
-    func refreshExternalInstallations() async throws {
+    func invalidateExternalInstallations() {
+        externalScanGeneration &+= 1
+    }
+
+    func refreshExternalInstallations(
+        scan: (@Sendable ([CaskRecord], [URL], Set<CaskId>) async throws -> [CaskId: URL])? = nil
+    ) async throws {
+        invalidateExternalInstallations()
+        let generation = externalScanGeneration
+        let configuration = BrewOperationConfiguration.current
         guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps) else {
             registry.clearExternalInstallations()
             return
@@ -135,18 +145,26 @@ final class CaskDataLoader {
 
         // Scan the full catalog, not just curated/search results, so totals include unbrowsed apps.
         let catalog = try await dbService.fetchAllCasks()
-        let directories = InstalledAppLocator.applicationDirectories
         let tokens = Set(registry.installedViewModels.map(\.fullToken))
         let loadIntuneInventory = self.loadIntuneInventory
         let loadArtCraftInventory = self.loadArtCraftInventory
-        let scan = try await Task.detached {
-            let intune = try loadIntuneInventory()
-            let artCraft = try loadArtCraftInventory()
-            return try ExternalAppDetector.installations(
-                catalog: catalog, managedTokens: tokens, directories: directories, intune: intune, artCraft: artCraft
+        let result: ExternalAppDetector.ScanResult
+        if let scan {
+            result = ExternalAppDetector.ScanResult(
+                externalAppURLs: try await scan(catalog, configuration.applicationDirectories, tokens)
             )
-        }.value
-        guard !Task.isCancelled else { return }
+        } else {
+            result = try await Task.detached {
+                let intune = try loadIntuneInventory()
+                let artCraft = try loadArtCraftInventory()
+                return try ExternalAppDetector.installations(
+                    catalog: catalog, managedTokens: tokens,
+                    directories: configuration.applicationDirectories, intune: intune, artCraft: artCraft
+                )
+            }.value
+        }
+        guard !Task.isCancelled, generation == externalScanGeneration,
+              configuration == .current else { return }
         // A Settings toggle may have changed while the off-main scan was running.
         guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps) else {
             registry.clearExternalInstallations()
@@ -154,8 +172,8 @@ final class CaskDataLoader {
         }
         _ = registry.viewModels(for: catalog)
         registry.markExternalInstallations(
-            appURLs: scan.externalAppURLs, appStoreAppURLs: scan.appStoreAppURLs,
-            intuneAppURLs: scan.intuneAppURLs, setappAppURLs: scan.setappAppURLs, artCraftAppURLs: scan.artCraftAppURLs
+            appURLs: result.externalAppURLs, appStoreAppURLs: result.appStoreAppURLs,
+            intuneAppURLs: result.intuneAppURLs, setappAppURLs: result.setappAppURLs, artCraftAppURLs: result.artCraftAppURLs
         )
     }
 

@@ -71,14 +71,17 @@ actor FaviconResolver {
 
     static func candidates(in html: String, pageURL: URL) -> [URL] {
         guard let pageURL = httpURL(pageURL) else { return [] }
-        let headEnd = html.range(of: "</head", options: .caseInsensitive)?.lowerBound ?? html.endIndex
-        let head = String(html[..<headEnd]).replacing(
+        let visibleHTML = html.replacing(
             #/(?is)<!--.*?-->|<script\b[^>]*>.*?</script\s*>|<style\b[^>]*>.*?</style\s*>/#,
             with: ""
         )
+        let headEnd = visibleHTML.range(of: "</head", options: .caseInsensitive)?.lowerBound ?? visibleHTML.endIndex
+        let head = String(visibleHTML[..<headEnd])
         let tags = head.matches(of: #/(?is)<(link|base)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/#)
         var baseURL = pageURL
-        if let base = tags.first(where: { $0.1.lowercased() == "base" }),
+        if let base = tags.first(where: {
+            $0.1.lowercased() == "base" && attributes(in: String($0.0))["href"] != nil
+        }),
            let href = attributes(in: String(base.0))["href"],
            let resolved = URL(string: href, relativeTo: pageURL)?.absoluteURL,
            let url = httpURL(resolved) {
@@ -116,13 +119,42 @@ actor FaviconResolver {
     private static func attributes(in tag: String) -> [String: String] {
         var result: [String: String] = [:]
         for attribute in tag.matches(of: #/([a-zA-Z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/#) {
-            if let value = attribute.2 ?? attribute.3 ?? attribute.4 {
-                result[attribute.1.lowercased()] = String(value).replacing(
-                    #/(?i)&(?:amp|#38|#x26);/#, with: "&"
-                )
+            if let value = attribute.2 ?? attribute.3 ?? attribute.4,
+               let decoded = decodedAttribute(String(value)) {
+                result[attribute.1.lowercased()] = decoded
             }
         }
         return result
+    }
+
+    private static func decodedAttribute(_ value: String) -> String? {
+        guard value.contains("&") else { return value }
+        let punctuation = [
+            "sol": 47, "bsol": 92, "colon": 58, "period": 46, "quest": 63, "num": 35,
+            "equals": 61, "percnt": 37, "commat": 64, "plus": 43, "lowbar": 95,
+            "lpar": 40, "rpar": 41, "comma": 44, "semi": 59, "apos": 39, "excl": 33,
+            "dollar": 36, "ast": 42, "Tab": 9, "NewLine": 10
+        ]
+        let references = value.replacing(#/&([A-Za-z][A-Za-z0-9]+);/#) { match in
+            punctuation[String(match.1)].map { "&#\($0);" } ?? String(match.0)
+        }
+        let escaped = references.replacingOccurrences(of: "\"", with: "&#34;")
+            .replacingOccurrences(of: "<", with: "&#60;")
+        do {
+            // An inert link gives Foundation's HTML decoder an attribute context without loading entities.
+            let document = try XMLDocument(
+                xmlString: "<html><body><a href=\"\(escaped)\">icon</a></body></html>",
+                options: [.documentTidyHTML, .nodeLoadExternalEntitiesNever]
+            )
+            guard let decoded = try document.nodes(forXPath: "//@href").first?.stringValue else {
+                logger.info("Favicon attribute could not be decoded")
+                return nil
+            }
+            return decoded
+        } catch {
+            logger.info("Favicon attribute decoding failed: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     private static func httpURL(_ url: URL) -> URL? {

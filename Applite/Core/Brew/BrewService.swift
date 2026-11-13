@@ -98,17 +98,50 @@ final class BrewService {
     func install(
         _ vm: CaskViewModel,
         arguments: [String]? = nil,
+        confirmedConfiguration: BrewOperationConfiguration? = nil,
         reconcile: (@MainActor () async throws -> Void)? = nil
     ) -> Task<Void, Never> {
+        let configuration = confirmedConfiguration ?? .current
         return runTask(for: vm) {
             Self.logger.info("Cask \"\(vm.token)\" installation started")
 
-            // Always --force: the Install button only shows when the cask isn't tracked as
-            // installed, so force just overwrites/adopts any untracked copy already on disk instead
-            // of erroring — and it's identical to a plain install when nothing is there.
-            // Use `fullToken` (like every sibling op) so a tapped token that collides with a core
-            // cask installs the intended cask, not the core one.
-            let arguments = arguments ?? Self.installArguments(fullToken: vm.fullToken)
+            do {
+                try configuration.validateCurrent()
+                let bundleNames = vm.appBundleNames
+                let name = vm.name
+                let appURL = await Task.detached {
+                    ExternalAppDetector.appURL(
+                        bundleNames: bundleNames, displayName: name,
+                        directories: configuration.applicationDirectories
+                    )
+                }.value
+                try Task.checkCancellation()
+                try configuration.validateCurrent()
+                if confirmedConfiguration != nil {
+                    guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps),
+                          UserDefaults.standard.value(for: Preferences.offerHomebrewManagement) else {
+                        throw CaskAdoptionError.confirmationRequired
+                    }
+                }
+                if !vm.isInstalled, appURL != nil || vm.isInstalledExternally {
+                    guard confirmedConfiguration != nil else {
+                        if UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps),
+                           let appURL { vm.externalAppURL = appURL }
+                        throw CaskAdoptionError.confirmationRequired
+                    }
+                }
+            } catch is CancellationError {
+                vm.progressState = .idle
+                return
+            } catch {
+                await self.showFailure(
+                    for: vm, error: error, output: error.localizedDescription,
+                    failureTitle: String(localized: "Couldn't start app installation"),
+                    failureMessage: error.localizedDescription
+                )
+                return
+            }
+            let arguments = arguments ?? Self.installArguments(fullToken: vm.fullToken, configuration: configuration)
 
             // Setup progress
             vm.progressState = .busy(withTask: "")
@@ -117,7 +150,8 @@ final class BrewService {
             let result = await self.streamBrewCommand(
                 arguments,
                 vm: vm,
-                busyLabel: String(localized: "Installing", comment: "Install progress text")
+                busyLabel: String(localized: "Installing", comment: "Install progress text"),
+                executable: configuration.executable
             )
 
             // Stopped by the user — no success/failure surface.
@@ -126,7 +160,11 @@ final class BrewService {
                 return
             }
 
-            if case .failure(let error) = result {
+            let commandOutput: String
+            switch result {
+            case .success(let output):
+                commandOutput = output
+            case .failure(let error):
                 let completeOutput = error.output
                 var failureMessage = error.underlying.localizedDescription
 
@@ -155,12 +193,13 @@ final class BrewService {
 
             if let reconcile {
                 do {
+                    try configuration.validateCurrent()
                     try await reconcile()
                 } catch {
                     await self.showFailure(
                         for: vm,
                         error: error,
-                        output: error.localizedDescription,
+                        output: commandOutput + "\n" + error.localizedDescription,
                         failureTitle: String(localized: "Couldn't refresh installed apps"),
                         failureMessage: error.localizedDescription
                     )
@@ -180,8 +219,10 @@ final class BrewService {
         }
     }
 
-    static func installArguments(fullToken: String) -> [String] {
-        ["install", "--cask", fullToken, "--force"] + appdirArguments()
+    static func installArguments(
+        fullToken: String, configuration: BrewOperationConfiguration = .current
+    ) -> [String] {
+        ["install", "--cask", fullToken, "--force"] + configuration.appdirArguments
     }
 
     /// Uninstalls the cask
@@ -951,11 +992,13 @@ final class BrewService {
     /// Streams a brew command, updating `vm.progressState` from each parsed line.
     /// Returns the complete output on success, or a ``BrewStreamError`` carrying
     /// the partial output on failure.
-    private func streamBrewCommand(_ arguments: [String], vm: CaskViewModel, busyLabel: String) async -> Result<String, BrewStreamError> {
+    private func streamBrewCommand(
+        _ arguments: [String], vm: CaskViewModel, busyLabel: String, executable: URL? = nil
+    ) async -> Result<String, BrewStreamError> {
         var completeOutput = ""
 
         do {
-            for try await line in Shell.streamBrewCommand(arguments, pty: true) {
+            for try await line in Shell.stream(executable ?? BrewPaths.currentBrewExecutable, arguments, pty: true) {
                 completeOutput += line + "\n"
 
                 if let newProgress = self.parseBrewProgress(line: line, busyLabel: busyLabel) {

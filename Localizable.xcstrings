@@ -11441,7 +11441,12 @@
     "The override was not enabled because Homebrew management or external app detection was turned off." : {},
     "This allows Homebrew to replace apps detected as managed by %@. Only enable this if you are authorized. Licenses, settings, and updates may be affected, and the original manager may reinstall the app. This does not remove device enrollment, organizational policies, or licensing requirements. Exact, enabled Homebrew casks are still required." : {},
     "Detected Management Sources" : {},
-    "Tracked by Homebrew" : {}
+    "Tracked by Homebrew" : {},
+    "Couldn't start app installation" : {},
+    "Homebrew configuration changed" : {},
+    "Homebrew or the app installation directory changed. Review the current settings and confirm the command again." : {},
+    "This app is already installed. Enable Homebrew management and confirm the current command before reinstalling it." : {},
+    "Checking app updates..." : {}
   },
   "version" : "1.1"
 }
