@@ -68,6 +68,7 @@ final class CaskViewModel {
     var homepageURL: String? { record.homepageURL }
     var pkgInstaller: Bool { record.pkgInstaller }
     var downloadsIn365days: Int { record.downloadsIn365days }
+    var appBundleNames: [String] { record.appBundleNames }
 
     /// Homepage as URL
     var homepage: URL? { record.homepage }

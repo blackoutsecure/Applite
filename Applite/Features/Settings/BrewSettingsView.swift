@@ -22,6 +22,8 @@ struct BrewSettingsView: View {
     @AppStorage(Preferences.detectExternallyInstalledApps) var detectExternallyInstalledApps
     @AppStorage(Preferences.offerHomebrewManagement) var offerHomebrewManagement
     @AppStorage(Preferences.annexUpdateFrequency) var annexUpdateFrequency
+    @AppStorage(Preferences.appdirOn) private var appdirOn
+    @AppStorage(Preferences.appdirPath) private var appdirPath
 
     /// Applite's own annex brew is the selected one.
     var isUsingAnnexBrew: Bool { brewPathOption == BrewPaths.PathOption.annex.rawValue }
@@ -61,6 +63,9 @@ struct BrewSettingsView: View {
             previousIncludeCasksFromTaps = includeCasksFromTaps
         }
         .onChange(of: detectExternallyInstalledApps) { _, _ in
+            caskManager.applyExternalAppDetectionSetting(surfacingErrorsIn: alert)
+        }
+        .onChange(of: [String(brewPathOption), customUserBrewPath, String(appdirOn), appdirPath]) { _, _ in
             caskManager.applyExternalAppDetectionSetting(surfacingErrorsIn: alert)
         }
     }

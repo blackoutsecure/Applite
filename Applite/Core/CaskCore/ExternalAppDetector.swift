@@ -1,6 +1,20 @@
 import Foundation
 
 enum ExternalAppDetector {
+    nonisolated static func scan(
+        catalog: [CaskRecord], directories: [URL], managedTokens: Set<CaskId>
+    ) async throws -> [CaskId: URL] {
+        await Task.detached {
+            var found: [CaskId: URL] = [:]
+            for record in catalog where !managedTokens.contains(record.fullToken) {
+                if let url = appURL(bundleNames: record.appBundleNames, displayName: record.name, directories: directories) {
+                    found[record.fullToken] = url
+                }
+            }
+            return found
+        }.value
+    }
+
     /// Unlike launch resolution, detection never looks in the Caskroom or LaunchServices:
     /// stale receipts and registered apps on mounted disk images are not local installations.
     nonisolated static func appURL(
