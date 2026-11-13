@@ -5,7 +5,8 @@
 Run `bash Testing/run-single-instance-tests.sh` to exercise the production lock
 without launching Applite or touching its preferences, database, or Homebrew.
 Tests cover concurrent processes, ownership release, abrupt process exit, stale
-lock files, and explicit I/O failures.
+lock files, explicit I/O failures, and selecting Uninstall before opening Settings,
+including repeat requests when Uninstall is already selected.
 
 For a manual UI check, launch Applite, then attempt to launch another copy with the
 same bundle identifier. The existing main window should come forward without an
@@ -14,6 +15,13 @@ window minimized or closed while Settings remains open; it should be restored or
 reopened. Quit and launch again to verify normal startup. Older copies that were
 already running before this fix must be quit once; the new version does not
 terminate another copy's in-progress Homebrew work.
+
+Also open **Settings > Uninstall**, then choose **Uninstall Applite...** from the app
+menu repeatedly and use the Applite self-card's trash action. Each entry point should
+select and focus the same Settings window, retaining the current uninstall options.
+Repeat from another Settings tab and with Settings closed or minimized. Merely
+opening the pane must not start an uninstall; do not confirm an actual uninstall
+on a shared machine.
 
 `applite_test.py` is a **guided** end-to-end test harness. It doesn't automate the
 UI — *you* perform each action in the real Applite window, and after each step the

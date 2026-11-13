@@ -31,6 +31,11 @@ the delegate's reopen callback using its scene's `openWindow` action, so reopeni
 the app can restore its main window even while Settings is the only visible window.
 Auxiliary terminal/info window groups remain unchanged.
 
+Self-uninstall has one destination: Settings' Uninstall pane. `SettingsNavigation`
+owns the selected pane; the app menu and self-card select it before calling the
+native `openSettings` action, which reuses the Settings window. There is no separate
+`uninstall-self` scene.
+
 1. **App Launch**: `ContentView.task(id: bootstrap.attempt)` calls `caskManager.bootstrapAndLoad()`
 2. **First Run**: `HomebrewBootstrap` installs/validates brew; while `bootstrap.needsSetupOverlay` is true, `ContentView` covers the window with the non-dismissable `ComponentsInstallView` modal (`Features/Bootstrap/`). There is no separate onboarding flow — the app opens straight into the main UI
 3. **Main UI**: `ContentView` with `NavigationSplitView` sidebar navigation

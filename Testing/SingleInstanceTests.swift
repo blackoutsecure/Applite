@@ -3,6 +3,7 @@ import Darwin
 
 @main
 enum SingleInstanceTests {
+    @MainActor
     static func main() throws {
         if CommandLine.arguments.count == 3 {
             let lock = try SingleInstanceLock(at: URL(fileURLWithPath: CommandLine.arguments[2]))
@@ -68,7 +69,21 @@ enum SingleInstanceTests {
             precondition(error.domain == NSPOSIXErrorDomain)
         }
 
-        print("PASS: single-instance ownership, concurrent processes, release, abrupt exit, stale files, and I/O errors")
+        let settings = SettingsNavigation()
+        settings.selection = .brew
+        var focusRequests = 0
+        let focusSettings = {
+            precondition(settings.selection == .uninstall, "Select Uninstall before opening or focusing Settings")
+            focusRequests += 1
+        }
+        settings.showUninstall(openSettings: focusSettings)
+        settings.showUninstall(openSettings: focusSettings)
+        precondition(focusRequests == 2, "Repeated Uninstall requests must still focus the existing Settings window")
+        settings.selection = .general
+        settings.showUninstall(openSettings: focusSettings)
+        precondition(focusRequests == 3)
+
+        print("PASS: single-instance ownership, concurrent processes, release, abrupt exit, stale files, I/O errors, and repeated Uninstall routing")
     }
 
     private static func startChild(mode: String, url: URL) throws -> (process: Process, input: Pipe, output: Pipe) {

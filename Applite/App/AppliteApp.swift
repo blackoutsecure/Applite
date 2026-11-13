@@ -16,6 +16,7 @@ struct AppliteApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) var appDelegate
 
     @State var caskManager: CaskManager
+    @State private var settingsNavigation = SettingsNavigation()
 
     private static var instanceLock: SingleInstanceLock?
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "AppLaunch")
@@ -54,6 +55,7 @@ struct AppliteApp: App {
         Window("Applite", id: "main") {
             MainWindowView(applicationDelegate: appDelegate)
                 .environment(caskManager)
+                .environment(settingsNavigation)
                 .environment(\.updater, updaterModel)
                 .frame(minWidth: 970, minHeight: 520)
                 .preferredColorScheme(selectedColorScheme)
@@ -64,23 +66,16 @@ struct AppliteApp: App {
         }
         .windowResizability(.contentSize)
         .commands {
-            CommandsMenu(updater: updaterModel, caskManager: caskManager)
+            CommandsMenu(updater: updaterModel, caskManager: caskManager, settingsNavigation: settingsNavigation)
         }
         
         Settings {
-            SettingsView(updater: updaterModel)
+            SettingsView(updater: updaterModel, navigation: settingsNavigation)
                 .environment(caskManager)
                 .preferredColorScheme(selectedColorScheme)
         }
         .windowResizability(.contentSize)
         
-        Window("Uninstall Applite", id: "uninstall-self") {
-            UninstallView()
-                .frame(width: 480, height: 520)
-                .preferredColorScheme(selectedColorScheme)
-        }
-        .windowResizability(.contentSize)
-
         WindowGroup("Terminal Output", for: String.self) { $errorString in
             ErrorWindowView(errorString: errorString ?? "N/a")
         }
