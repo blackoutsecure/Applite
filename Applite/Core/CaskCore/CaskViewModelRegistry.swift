@@ -62,12 +62,53 @@ final class CaskViewModelRegistry {
         updateFlag(\.isInstalled) { $0.matchesFullName(in: tokens) }
     }
 
-    func markExternalInstallations(appURLs: [CaskId: URL]) {
+    func markExternalInstallations(
+        appURLs: [CaskId: URL], appStoreAppURLs: [CaskId: URL] = [:],
+        intuneAppURLs: [CaskId: URL] = [:], setappAppURLs: [CaskId: URL] = [:],
+        artCraftAppURLs: [CaskId: URL] = [:]
+    ) {
+        applyManagementSourceOverrides()
         for vm in viewModelsByFullToken.values {
+            let urls: [ProtectedAppInstallation.Source: URL?] = [
+                .intune: intuneAppURLs[vm.fullToken], .appStore: appStoreAppURLs[vm.fullToken],
+                .setapp: setappAppURLs[vm.fullToken], .artCraft: artCraftAppURLs[vm.fullToken]
+            ]
+            let protection = ProtectedAppInstallation(appURLs: urls.compactMapValues { $0 })
+            if vm.protectedAppInstallation != protection {
+                vm.protectedAppInstallation = protection
+            }
+            if vm.isManagementProtected { vm.isOutdated = false }
             let url = vm.isInstalled ? nil : appURLs[vm.fullToken]
             if vm.externalAppURL != url {
                 vm.externalAppURL = url
             }
+        }
+    }
+
+    @discardableResult
+    func applyManagementSourceOverrides() -> Bool {
+        let overrides = ProtectedAppInstallation.Source.enabledOverrides()
+        var changed = false
+        for vm in viewModelsByFullToken.values {
+            if vm.managementSourceOverrides != overrides {
+                vm.managementSourceOverrides = overrides
+                changed = true
+            }
+            if vm.isManagementProtected && vm.isOutdated { vm.isOutdated = false }
+        }
+        return changed
+    }
+
+    func clearExternalInstallations() {
+        applyManagementSourceOverrides()
+        for vm in viewModelsByFullToken.values where vm.externalAppURL != nil {
+            vm.externalAppURL = nil
+        }
+    }
+
+    func clearHomebrewManagementErrors() {
+        for vm in viewModelsByFullToken.values where vm.homebrewManagementError != nil {
+            vm.homebrewManagementError = nil
         }
     }
 
@@ -76,10 +117,23 @@ final class CaskViewModelRegistry {
     /// same-token casks can be the installed one, and installed state is reconciled first (see
     /// `CaskManager.loadInstalledState`, which awaits `refreshInstalled` before `refreshOutdated`).
     func markOutdated(tokens: Set<CaskId>) {
-        updateFlag(\.isOutdated) { $0.isInstalled && $0.matchesBareToken(in: tokens) }
+        updateFlag(\.isOutdated) {
+            $0.isInstalled && !$0.isManagementProtected
+                && $0.homebrewManagementBlockReason == nil && $0.matchesBareToken(in: tokens)
+        }
     }
 
     // MARK: - Computed Filtered Lists
+
+    var locallyInstalledViewModels: [CaskViewModel] {
+        viewModelsByFullToken.values
+            .filter { $0.isLocallyInstalled && !$0.isApplite }
+            .sorted()
+    }
+
+    var locallyInstalledCount: Int {
+        viewModelsByFullToken.values.lazy.filter { $0.isLocallyInstalled && !$0.isApplite }.count
+    }
 
     /// All currently installed view models, sorted by name
     var installedViewModels: [CaskViewModel] {
@@ -91,7 +145,7 @@ final class CaskViewModelRegistry {
     /// All currently outdated view models, sorted by name
     var outdatedViewModels: [CaskViewModel] {
         viewModelsByFullToken.values
-            .filter(\.isOutdated)
+            .filter { $0.isOutdated && !$0.isManagementProtected && $0.homebrewManagementBlockReason == nil }
             .sorted()
     }
 
@@ -110,7 +164,9 @@ final class CaskViewModelRegistry {
     }
 
     var outdatedCount: Int {
-        viewModelsByFullToken.values.lazy.filter(\.isOutdated).count
+        viewModelsByFullToken.values.lazy.filter {
+            $0.isOutdated && !$0.isManagementProtected && $0.homebrewManagementBlockReason == nil
+        }.count
     }
 
     /// Total number of tracked view models

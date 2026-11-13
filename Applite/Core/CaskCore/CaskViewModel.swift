@@ -30,12 +30,32 @@ final class CaskViewModel {
     }
 
     var externalAppURL: URL?
+    var protectedAppInstallation: ProtectedAppInstallation?
+    var appStoreAppURL: URL? {
+        protectedAppInstallation?.source == .appStore ? protectedAppInstallation?.url : nil
+    }
+    var isAppStoreManaged: Bool { protectedAppInstallation?.source == .appStore }
+    var isIntuneManaged: Bool { protectedAppInstallation?.source == .intune }
+    var isSetappManaged: Bool { protectedAppInstallation?.source == .setapp }
+    var isArtCraftManaged: Bool { protectedAppInstallation?.source == .artCraft }
+    var managementSourceOverrides = ProtectedAppInstallation.Source.enabledOverrides()
+    var managementProtection: ProtectedAppInstallation? {
+        protectedAppInstallation?.excluding(managementSourceOverrides)
+    }
+    var isManagementProtected: Bool { managementProtection != nil }
+    var homebrewManagementError: String?
+    var homebrewManagementBlockReason: String? {
+        if warning?.isDisabled == true { return CaskAdoptionError.homebrewDisabled.localizedDescription }
+        return homebrewManagementError
+    }
 
     var installationState: CaskInstallationState {
         CaskInstallationState(isManaged: isInstalled, externalAppURL: externalAppURL)
     }
 
     var isInstalledExternally: Bool { installationState == .externalInstalled }
+    var isLocallyInstalled: Bool { isInstalled || isInstalledExternally }
+    var isApplite: Bool { record.isApplite }
 
     /// Whether the cask has an update available
     var isOutdated: Bool = false
@@ -68,6 +88,7 @@ final class CaskViewModel {
     var homepageURL: String? { record.homepageURL }
     var pkgInstaller: Bool { record.pkgInstaller }
     var downloadsIn365days: Int { record.downloadsIn365days }
+    var appBundleNames: [String] { record.appBundleNames }
 
     /// Homepage as URL
     var homepage: URL? { record.homepage }
@@ -108,7 +129,9 @@ final class CaskViewModel {
         // Resolve the real bundle location off the main actor — a few stat calls plus a small
         // JSON read. `InstalledAppLocator` tries the Caskroom symlink, the cask's `app` artifact
         // name, a display-name guess, and finally a LaunchServices bundle-id lookup.
-        let appURL = if let externalAppURL, isInstalledExternally {
+        let appURL = if let protectedAppInstallation {
+            protectedAppInstallation.url
+        } else if let externalAppURL, isInstalledExternally {
             externalAppURL
         } else {
             await Task.detached {

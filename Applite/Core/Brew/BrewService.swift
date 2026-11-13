@@ -43,13 +43,19 @@ final class BrewService {
     private(set) var activeTasks: [ActiveBrewTask] = []
 
     private let notify: @MainActor (String, String, NotificationReason) async -> Void
+    private let loadIntuneInventory: IntuneAppDetector.Loader
+    private let loadArtCraftInventory: ArtCraftAppDetector.Loader
 
     init(
         notify: @escaping @MainActor (String, String, NotificationReason) async -> Void = { title, body, reason in
             await sendNotification(title: title, body: body, reason: reason)
-        }
+        },
+        intuneInventory: @escaping IntuneAppDetector.Loader = { try IntuneAppDetector.load() },
+        artCraftInventory: @escaping ArtCraftAppDetector.Loader = { try ArtCraftAppDetector.load() }
     ) {
         self.notify = notify
+        self.loadIntuneInventory = intuneInventory
+        self.loadArtCraftInventory = artCraftInventory
     }
 
     /// Asks the owner (`CaskManager`) to re-resolve brew when an operation finds the selected path
@@ -180,7 +186,7 @@ final class BrewService {
 
     /// Uninstalls the cask
     func uninstall(_ vm: CaskViewModel, zap: Bool = false) {
-        runTask(for: vm) {
+        runTask(for: vm, requiresSupportedCask: false) {
             vm.progressState = .busy(withTask: String(localized: "Uninstalling", comment: "Uninstall progress text"))
 
             // Always --force (mirrors the bulk-install rationale): a cask whose files are partly
@@ -355,7 +361,9 @@ final class BrewService {
 
     /// Gets additional info for a cask from brew CLI
     func getAdditionalInfoForCask(_ vm: CaskViewModel) async throws -> CaskAdditionalInfo {
-        let json = try await Shell.runBrewCommand(["info", "--json=v2", "--cask", vm.fullToken])
+        let json = try await Shell.runBrewCommand(
+            ["info", "--json=v2", "--cask", vm.fullToken], timeout: .seconds(30)
+        )
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         let decoder = JSONDecoder()
@@ -363,9 +371,11 @@ final class BrewService {
 
         let responseObject = try decoder.decode(CaskAdditionalInfoResponse.self, from: json.data(using: .utf8)!)
 
-        guard let additionalInfo = responseObject.casks.first else {
+        guard responseObject.casks.count == 1, let additionalInfo = responseObject.casks.first,
+              additionalInfo.token == vm.token, additionalInfo.full_token == vm.fullToken,
+              additionalInfo.tap == vm.tap else {
             Self.logger.error("Couldn't find cask \(vm.fullToken)")
-            throw CaskLoadError.failedToLoadAdditionalInfo
+            throw CaskAdoptionError.homebrewUnavailable
         }
 
         return additionalInfo
@@ -377,7 +387,9 @@ final class BrewService {
     /// task. The op waits for any earlier queued op to finish (only one brew process at a time);
     /// until then the card shows "Waiting…".
     @discardableResult
-    private func runTask(for vm: CaskViewModel, _ operation: @escaping () async -> Void) -> Task<Void, Never> {
+    private func runTask(
+        for vm: CaskViewModel, requiresSupportedCask: Bool = true, _ operation: @escaping () async -> Void
+    ) -> Task<Void, Never> {
         // Drop any lingering (dismissed-or-not) entry for this cask before re-queuing it, so a
         // retry of a failed op doesn't leave two cards for the same cask.
         activeTasks.removeAll { $0.viewModel == vm }
@@ -403,18 +415,101 @@ final class BrewService {
                 return
             }
 
+            guard !(await self.blockProtectedManagement(of: vm)) else { return }
+
             // Make sure brew path is valid
             guard await self.brewPathIsValid() else {
                 vm.progressState = .idle
                 return
             }
 
+            if requiresSupportedCask {
+                guard !(await self.blockUnsupportedManagement(of: vm)) else { return }
+            } else if !vm.isInstalled {
+                await self.reportManagementBlock(for: vm, error: CaskAdoptionError.notHomebrewManaged)
+                return
+            }
+            guard !(await self.blockKnownProtectedManagement(of: vm)) else { return }
             await operation()
         }
 
         queueTail = task
         self.activeTasks.append(ActiveBrewTask(operationID: operationID, viewModel: vm, task: task))
         return task
+    }
+
+    private func blockProtectedManagement(
+        of vm: CaskViewModel, intuneInventory: IntuneAppDetector.Snapshot? = nil,
+        artCraftInventory: ArtCraftAppDetector.Snapshot? = nil
+    ) async -> Bool {
+        let bundleNames = vm.appBundleNames
+        let displayName = vm.name
+        let directories = InstalledAppLocator.applicationDirectories
+        let knownURL = vm.protectedAppInstallation?.url ?? vm.externalAppURL
+        let loadIntuneInventory = self.loadIntuneInventory
+        let loadArtCraftInventory = self.loadArtCraftInventory
+        do {
+            let protection = try await Task.detached {
+                let inventory = try intuneInventory ?? loadIntuneInventory()
+                let artCraft = try artCraftInventory ?? loadArtCraftInventory()
+                return try ExternalAppDetector.protectedInstallation(
+                    bundleNames: bundleNames, displayName: displayName,
+                    directories: directories, knownURL: knownURL, intune: inventory, artCraft: artCraft
+                )
+            }.value
+            if Task.isCancelled {
+                vm.progressState = .idle
+                return true
+            }
+            vm.protectedAppInstallation = protection
+            return await blockKnownProtectedManagement(of: vm)
+        } catch {
+            if Task.isCancelled {
+                vm.progressState = .idle
+                return true
+            }
+            await reportManagementBlock(for: vm, error: error)
+        }
+        return true
+    }
+
+    private func blockKnownProtectedManagement(of vm: CaskViewModel) async -> Bool {
+        vm.managementSourceOverrides = ProtectedAppInstallation.Source.enabledOverrides()
+        guard let protection = vm.managementProtection else { return false }
+        vm.isOutdated = false
+        await reportManagementBlock(for: vm, error: protection.source.blockError)
+        return true
+    }
+
+    private func reportManagementBlock(for vm: CaskViewModel, error: Error) async {
+        await showFailure(
+            for: vm, error: error, output: error.localizedDescription,
+            failureTitle: String(localized: "Homebrew action blocked"),
+            failureMessage: error.localizedDescription
+        )
+    }
+
+    private func blockUnsupportedManagement(of vm: CaskViewModel) async -> Bool {
+        do {
+            if vm.warning?.isDisabled == true { throw CaskAdoptionError.homebrewDisabled }
+            let info = try await getAdditionalInfoForCask(vm)
+            if info.disabled { throw CaskAdoptionError.homebrewDisabled }
+            if Task.isCancelled {
+                vm.progressState = .idle
+                return true
+            }
+            vm.homebrewManagementError = nil
+            return false
+        } catch {
+            if Task.isCancelled {
+                vm.progressState = .idle
+                return true
+            }
+            vm.homebrewManagementError = error.localizedDescription
+            vm.isOutdated = false
+            await reportManagementBlock(for: vm, error: error)
+            return true
+        }
     }
 
     /// Validates the selected brew path before an operation runs. On failure it hands the fault to
@@ -502,11 +597,73 @@ final class BrewService {
                 for vm in vms { vm.progressState = .idle }
                 return
             }
-            guard await self.brewPathIsValid() else {
-                for vm in vms { vm.progressState = .idle }
+            let intuneInventory: IntuneAppDetector.Snapshot
+            let artCraftInventory: ArtCraftAppDetector.Snapshot
+            do {
+                let load = self.loadIntuneInventory
+                let loadArtCraft = self.loadArtCraftInventory
+                (intuneInventory, artCraftInventory) = try await Task.detached {
+                    (try load(), try loadArtCraft())
+                }.value
+            } catch {
+                for vm in vms {
+                    if Task.isCancelled {
+                        vm.progressState = .idle
+                    } else {
+                        await self.reportManagementBlock(for: vm, error: error)
+                    }
+                }
                 return
             }
-            await self.runBatchOperation(vms, kind: kind)
+            var eligible: [CaskViewModel] = []
+            for vm in vms {
+                if !(await self.blockProtectedManagement(
+                    of: vm, intuneInventory: intuneInventory, artCraftInventory: artCraftInventory
+                )) {
+                    eligible.append(vm)
+                }
+            }
+            if Task.isCancelled {
+                for vm in eligible { vm.progressState = .idle }
+                return
+            }
+            guard !eligible.isEmpty else { return }
+            guard await self.brewPathIsValid() else {
+                for vm in eligible { vm.progressState = .idle }
+                return
+            }
+            var supported: [CaskViewModel] = []
+            for vm in eligible {
+                if !(await self.blockUnsupportedManagement(of: vm)) {
+                    supported.append(vm)
+                }
+            }
+            if Task.isCancelled {
+                for vm in supported { vm.progressState = .idle }
+                return
+            }
+            // Do not yield between final permission decisions: notifying about one blocked
+            // entry could otherwise let Settings revoke permission for an earlier entry.
+            let overrides = ProtectedAppInstallation.Source.enabledOverrides()
+            var allowed: [CaskViewModel] = []
+            var blocked: [(CaskViewModel, CaskAdoptionError)] = []
+            for vm in supported {
+                vm.managementSourceOverrides = overrides
+                if let protection = vm.managementProtection {
+                    let error = protection.source.blockError
+                    vm.isOutdated = false
+                    vm.progressState = .failed(output: error.localizedDescription)
+                    blocked.append((vm, error))
+                } else {
+                    allowed.append(vm)
+                }
+            }
+            if !allowed.isEmpty {
+                await self.runBatchOperation(allowed, kind: kind)
+            }
+            for (vm, error) in blocked {
+                await self.reportManagementBlock(for: vm, error: error)
+            }
         }
 
         handle.task = task

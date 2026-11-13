@@ -23,10 +23,27 @@ enum InstalledAppLocator {
 
     nonisolated static var applicationDirectories: [URL] {
         let configured = appDirectory
-        return [configured] + [
+        let standard = [
             URL.applicationDirectory,
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true)
-        ].filter { $0 != configured }
+        ]
+        return [configured] + (standard + standard.map {
+            $0.appendingPathComponent("Setapp", isDirectory: true)
+        }).filter { $0 != configured }
+    }
+
+    nonisolated static func bundleIdentifier(at appURL: URL) throws -> String? {
+        let data: Data
+        do {
+            data = try Data(contentsOf: appURL.appendingPathComponent("Contents/Info.plist"))
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            return nil
+        }
+        return try PropertyListDecoder().decode(BundleInfo.self, from: data).CFBundleIdentifier
+    }
+
+    private struct BundleInfo: Decodable {
+        let CFBundleIdentifier: String?
     }
 
     /// Resolves the URL of the installed app for a cask.
