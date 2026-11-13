@@ -9,12 +9,16 @@ import Foundation
 import SwiftUI
 import Sparkle
 import Kingfisher
+import OSLog
 
 @main
 struct AppliteApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) var appDelegate
 
-    @State var caskManager = CaskManager()
+    @State var caskManager: CaskManager
+
+    private static var instanceLock: SingleInstanceLock?
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "AppLaunch")
     
     @AppStorage(Preferences.colorSchemePreference) var colorSchemePreference
 
@@ -37,6 +41,8 @@ struct AppliteApp: App {
     }
     
     init() {
+        Self.enforceSingleInstance()
+        _caskManager = State(initialValue: CaskManager())
         updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
         updaterModel = UpdaterViewModel(updater: updaterController.updater)
 
@@ -45,8 +51,8 @@ struct AppliteApp: App {
     }
     
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        Window("Applite", id: "main") {
+            MainWindowView(applicationDelegate: appDelegate)
                 .environment(caskManager)
                 .environment(\.updater, updaterModel)
                 .frame(minWidth: 970, minHeight: 520)
@@ -84,5 +90,48 @@ struct AppliteApp: App {
             CaskInfoWindowView(info: info ?? .dummy)
         }
         .windowResizability(.contentSize)
+    }
+
+    private static func enforceSingleInstance() {
+        do {
+            try AppPaths.createApplicationSupportIfNeeded()
+            let lock = try SingleInstanceLock(at: AppPaths.applicationSupport.appending(path: "instance.lock"))
+            let currentPID = ProcessInfo.processInfo.processIdentifier
+            let peers = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier!)
+                .filter { $0.processIdentifier != currentPID && !$0.isTerminated }
+                .sorted { ($0.launchDate ?? .distantFuture) < ($1.launchDate ?? .distantFuture) }
+
+            // Older releases do not own the lock. Respect a fully launched older copy too,
+            // but do not yield ownership to another copy that is still starting.
+            if let existing = peers.first(where: { !lock.isPrimary || $0.isFinishedLaunching }) {
+                guard let url = existing.bundleURL, NSWorkspace.shared.open(url) else {
+                    throw LaunchError.reopenFailed
+                }
+                exit(EXIT_SUCCESS)
+            }
+
+            guard lock.isPrimary else { throw LaunchError.alreadyStarting }
+            instanceLock = lock
+        } catch {
+            logger.error("Single-instance startup failed: \(error.localizedDescription)")
+            let alert = NSAlert(error: error)
+            alert.messageText = String(localized: "Couldn't start Applite")
+            alert.runModal()
+            exit(EXIT_FAILURE)
+        }
+    }
+
+    private enum LaunchError: LocalizedError {
+        case reopenFailed
+        case alreadyStarting
+
+        var errorDescription: String? {
+            switch self {
+            case .reopenFailed:
+                String(localized: "Applite is already running, but its window couldn't be opened. Select Applite in the Dock.")
+            case .alreadyStarting:
+                String(localized: "Applite is already starting. Please try again in a moment.")
+            }
+        }
     }
 }

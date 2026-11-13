@@ -81,6 +81,18 @@ or
 
 Minimum OS version: **macOS 14+**. Universal binary, Apple Silicon and Intel.
 
+## Single-instance behavior
+
+Only one Applite instance runs per macOS user, including copies launched from
+different locations with the same bundle identifier. Launching it again brings
+the existing main window forward or reopens it when needed, rather than starting
+another Homebrew/database session or showing a routine "already running" warning.
+The startup lock is released automatically when the process exits, including
+after a crash. Lock or handoff errors are reported instead of starting unprotected.
+
+When upgrading, quit any older copies that are already running once. The new
+version does not terminate another copy's in-progress Homebrew work.
+
 ## Built With
 
 Swift and SwiftUI, targeting macOS 14 so `@Observable` and `NavigationSplitView` are available without back-deployment shims. No Combine. The cask catalog is a local SQLite database (GRDB.swift, WAL mode) synced from the Homebrew JSON API, with FTS5 and BM25 ranking for full-catalog search. Loading is two-stage: SQLite paints the UI immediately, then `brew list --cask` and `brew outdated --cask` fill in installed and outdated state reactively, so nothing blocks on the brew CLI.

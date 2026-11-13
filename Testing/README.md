@@ -1,5 +1,20 @@
 # Applite test harness
 
+## Non-destructive single-instance regression tests
+
+Run `bash Testing/run-single-instance-tests.sh` to exercise the production lock
+without launching Applite or touching its preferences, database, or Homebrew.
+Tests cover concurrent processes, ownership release, abrupt process exit, stale
+lock files, and explicit I/O failures.
+
+For a manual UI check, launch Applite, then attempt to launch another copy with the
+same bundle identifier. The existing main window should come forward without an
+"already running" dialog or another persistent process. Repeat with the main
+window minimized or closed while Settings remains open; it should be restored or
+reopened. Quit and launch again to verify normal startup. Older copies that were
+already running before this fix must be quit once; the new version does not
+terminate another copy's in-progress Homebrew work.
+
 `applite_test.py` is a **guided** end-to-end test harness. It doesn't automate the
 UI — *you* perform each action in the real Applite window, and after each step the
 script independently verifies the real result via the Homebrew CLI + filesystem

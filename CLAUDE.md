@@ -19,6 +19,18 @@ Open `Applite.xcodeproj` in Xcode and build/run (⌘R). Dependencies resolve aut
 
 ### Data Flow
 
+Before creating `CaskManager`, `AppliteApp.init` acquires `SingleInstanceLock` in the
+per-user application-support directory. Repeat launches reopen the existing copy
+and exit before database, Homebrew, or Sparkle initialization. The lock uses
+nonblocking `flock`, is close-on-exec, and is never unlinked; the OS releases it on
+exit. Startup/handoff failures are logged and shown with a native alert because
+the normal window alert manager does not exist yet.
+
+The main scene is a singleton `Window` with ID `main`. `MainWindowView` supplies
+the delegate's reopen callback using its scene's `openWindow` action, so reopening
+the app can restore its main window even while Settings is the only visible window.
+Auxiliary terminal/info window groups remain unchanged.
+
 1. **App Launch**: `ContentView.task(id: bootstrap.attempt)` calls `caskManager.bootstrapAndLoad()`
 2. **First Run**: `HomebrewBootstrap` installs/validates brew; while `bootstrap.needsSetupOverlay` is true, `ContentView` covers the window with the non-dismissable `ComponentsInstallView` modal (`Features/Bootstrap/`). There is no separate onboarding flow — the app opens straight into the main UI
 3. **Main UI**: `ContentView` with `NavigationSplitView` sidebar navigation
