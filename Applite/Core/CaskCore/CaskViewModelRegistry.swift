@@ -65,7 +65,7 @@ final class CaskViewModelRegistry {
     func markExternalInstallations(
         appURLs: [CaskId: URL], appStoreAppURLs: [CaskId: URL] = [:],
         intuneAppURLs: [CaskId: URL] = [:], setappAppURLs: [CaskId: URL] = [:],
-        artCraftAppURLs: [CaskId: URL] = [:]
+        artCraftAppURLs: [CaskId: URL] = [:], bundleURLs: [CaskId: URL]? = nil
     ) {
         applyManagementSourceOverrides()
         for vm in viewModelsByFullToken.values {
@@ -74,6 +74,11 @@ final class CaskViewModelRegistry {
                 .setapp: setappAppURLs[vm.fullToken], .artCraft: artCraftAppURLs[vm.fullToken]
             ]
             let protection = ProtectedAppInstallation(appURLs: urls.compactMapValues { $0 })
+            if let bundleURLs {
+                vm.installedBundleURL = bundleURLs[vm.fullToken]
+            } else if let url = appURLs[vm.fullToken] {
+                vm.installedBundleURL = url.standardizedFileURL
+            }
             if vm.protectedAppInstallation != protection {
                 vm.protectedAppInstallation = protection
             }
@@ -125,14 +130,30 @@ final class CaskViewModelRegistry {
 
     // MARK: - Computed Filtered Lists
 
+    private var locallyInstalledProjection: [CaskViewModel] {
+        var byBundle: [String: CaskViewModel] = [:]
+        for vm in viewModelsByFullToken.values where vm.isLocallyInstalled && !vm.isApplite {
+            let url = vm.installedBundleURL ?? vm.externalAppURL ?? vm.protectedAppInstallation?.url
+            let identity = url.map { "bundle:\($0.standardizedFileURL.path)" } ?? "cask:\(vm.fullToken)"
+            if let existing = byBundle[identity] {
+                if vm.isInstalled != existing.isInstalled {
+                    if vm.isInstalled { byBundle[identity] = vm }
+                } else if vm.fullToken < existing.fullToken {
+                    byBundle[identity] = vm
+                }
+            } else {
+                byBundle[identity] = vm
+            }
+        }
+        return Array(byBundle.values)
+    }
+
     var locallyInstalledViewModels: [CaskViewModel] {
-        viewModelsByFullToken.values
-            .filter { $0.isLocallyInstalled && !$0.isApplite }
-            .sorted()
+        locallyInstalledProjection.sorted()
     }
 
     var locallyInstalledCount: Int {
-        viewModelsByFullToken.values.lazy.filter { $0.isLocallyInstalled && !$0.isApplite }.count
+        locallyInstalledProjection.count
     }
 
     /// All currently installed view models, sorted by name

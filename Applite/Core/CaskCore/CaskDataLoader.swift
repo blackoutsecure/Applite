@@ -157,9 +157,17 @@ final class CaskDataLoader {
             result = try await Task.detached {
                 let intune = try loadIntuneInventory()
                 let artCraft = try loadArtCraftInventory()
+                let recorded = try Dictionary(uniqueKeysWithValues: catalog.filter {
+                    tokens.contains($0.fullToken)
+                }.map {
+                    ($0.fullToken, try InstalledAppLocator.recordedAppURLs(
+                        token: $0.token, executable: configuration.executable
+                    ))
+                })
                 return try ExternalAppDetector.installations(
                     catalog: catalog, managedTokens: tokens,
-                    directories: configuration.applicationDirectories, intune: intune, artCraft: artCraft
+                    directories: configuration.applicationDirectories, intune: intune,
+                    artCraft: artCraft, recordedAppURLs: recorded
                 )
             }.value
         }
@@ -173,7 +181,8 @@ final class CaskDataLoader {
         _ = registry.viewModels(for: catalog)
         registry.markExternalInstallations(
             appURLs: result.externalAppURLs, appStoreAppURLs: result.appStoreAppURLs,
-            intuneAppURLs: result.intuneAppURLs, setappAppURLs: result.setappAppURLs, artCraftAppURLs: result.artCraftAppURLs
+            intuneAppURLs: result.intuneAppURLs, setappAppURLs: result.setappAppURLs,
+            artCraftAppURLs: result.artCraftAppURLs, bundleURLs: result.bundleURLs
         )
     }
 

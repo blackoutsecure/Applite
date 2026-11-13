@@ -231,6 +231,14 @@ Missing, mismatched, disabled, malformed, or failed lookups block the modifying
 command and expose the reason in Active Tasks. Existing ownership protection wins
 before this check.
 
+Each operation pins its Homebrew executable and app-directory configuration.
+Ownership evidence is refreshed again after metadata verification, including
+recorded Caskroom targets in previous custom app directories. Bulk operations
+refresh shared inventories after all metadata requests, then make final override
+decisions without yielding. Changing the selection invalidates pending writes.
+Installed rows, search filtering, and totals use canonical bundle identities;
+duplicate receipts stay intact, and single/bulk installs reconcile the projection.
+
 Disabled/unavailable apps cannot offer adoption, installation, updates, or reinstall;
 cards show **Homebrew unavailable** with an explanatory tooltip. Open/Get Info remain
 available for local apps. **Refresh App Catalog** clears transient verification

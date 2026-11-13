@@ -7,6 +7,7 @@ enum ExternalAppDetector {
         var intuneAppURLs: [CaskId: URL] = [:]
         var setappAppURLs: [CaskId: URL] = [:]
         var artCraftAppURLs: [CaskId: URL] = [:]
+        var bundleURLs: [CaskId: URL] = [:]
     }
 
     nonisolated static func installations(
@@ -14,7 +15,8 @@ enum ExternalAppDetector {
         managedTokens: Set<CaskId>,
         directories: [URL],
         intune: IntuneAppDetector.Snapshot = .empty,
-        artCraft: ArtCraftAppDetector.Snapshot = .empty
+        artCraft: ArtCraftAppDetector.Snapshot = .empty,
+        recordedAppURLs: [CaskId: [URL]] = [:]
     ) throws -> ScanResult {
         // A shared bundle cannot establish a release channel. Prefer its managed owner,
         // otherwise a supported official, unversioned cask, with a deterministic tie-break.
@@ -37,7 +39,8 @@ enum ExternalAppDetector {
         var claimed: Set<URL> = []
         var found = ScanResult()
         for record in ordered {
-            guard let url = appURL(
+            let recorded = recordedAppURLs[record.fullToken] ?? []
+            guard let url = recorded.first ?? appURL(
                 bundleNames: record.appBundleNames,
                 displayName: record.name,
                 directories: directories
@@ -45,7 +48,8 @@ enum ExternalAppDetector {
             else { continue }
             let protection = try protectedInstallation(
                 bundleNames: record.appBundleNames, displayName: record.name,
-                directories: directories, knownURL: url, intune: intune, artCraft: artCraft
+                directories: directories, knownURL: url, intune: intune,
+                artCraft: artCraft, additionalURLs: recorded
             )
             // Protect every matching cask alias, but still list each installed bundle once.
             if let protection {
@@ -59,7 +63,9 @@ enum ExternalAppDetector {
                 }
             }
             let installationURL = protection?.url ?? url
-            guard claimed.insert(installationURL.resolvingSymlinksInPath().standardizedFileURL).inserted else { continue }
+            let canonicalURL = installationURL.resolvingSymlinksInPath().standardizedFileURL
+            found.bundleURLs[record.fullToken] = canonicalURL
+            guard claimed.insert(canonicalURL).inserted else { continue }
             if !managedTokens.contains(record.fullToken) {
                 found.externalAppURLs[record.fullToken] = installationURL
             }
@@ -87,9 +93,11 @@ enum ExternalAppDetector {
     nonisolated static func protectedInstallation(
         bundleNames: [String], displayName: String, directories: [URL],
         knownURL: URL? = nil, intune: IntuneAppDetector.Snapshot,
-        artCraft: ArtCraftAppDetector.Snapshot = .empty
+        artCraft: ArtCraftAppDetector.Snapshot = .empty,
+        additionalURLs: [URL] = []
     ) throws -> ProtectedAppInstallation? {
         var candidates = knownURL.map { [$0] } ?? []
+        candidates.append(contentsOf: additionalURLs.filter { !candidates.contains($0) })
         let names = bundleNames.isEmpty ? ["\(displayName).app"] : bundleNames
         for directory in directories {
             for name in names {

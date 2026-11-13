@@ -2,6 +2,12 @@
 
 ## Non-destructive external-install regression tests
 
+Review-race cases pause single and bulk metadata requests before adding App Store,
+Setapp or Intune evidence or changing Homebrew. A two-entry batch also pauses its
+last metadata request to verify the first entry is rechecked. Recorded old-appdir
+targets, managed-receipt aliases, separate bundles, and immediate single/bulk
+Installed projection reconciliation use isolated filesystem fixtures.
+
 Review-race fixtures also cover an Install before initial detection, configuration
 changes before confirmation/queued execution, retained stdout/stderr after a failed
 reconciliation, and a paused scan completing after detection is disabled/re-enabled.
