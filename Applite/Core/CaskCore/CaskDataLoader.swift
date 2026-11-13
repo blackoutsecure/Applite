@@ -16,6 +16,7 @@ final class CaskDataLoader {
     private let dbService: CaskDatabaseService
     private let registry: CaskViewModelRegistry
     private let installedService: InstalledCaskService
+    private var externalScanGeneration = 0
 
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier!,
@@ -119,7 +120,16 @@ final class CaskDataLoader {
         try await refreshExternalInstallations()
     }
 
-    func refreshExternalInstallations() async throws {
+    func invalidateExternalInstallations() {
+        externalScanGeneration &+= 1
+    }
+
+    func refreshExternalInstallations(
+        scan: @Sendable ([CaskRecord], [URL], Set<CaskId>) async throws -> [CaskId: URL] = ExternalAppDetector.scan
+    ) async throws {
+        invalidateExternalInstallations()
+        let generation = externalScanGeneration
+        let configuration = BrewOperationConfiguration.current
         guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps) else {
             registry.markExternalInstallations(appURLs: [:])
             return
@@ -127,22 +137,10 @@ final class CaskDataLoader {
 
         // Scan the full catalog, not just curated/search results, so totals include unbrowsed apps.
         let catalog = try await dbService.fetchAllCasks()
-        let directories = InstalledAppLocator.applicationDirectories
         let tokens = Set(registry.installedViewModels.map(\.fullToken))
-        let appURLs = await Task.detached {
-            var found: [CaskId: URL] = [:]
-            for record in catalog where !tokens.contains(record.fullToken) {
-                if let url = ExternalAppDetector.appURL(
-                    bundleNames: record.appBundleNames,
-                    displayName: record.name,
-                    directories: directories
-                ) {
-                    found[record.fullToken] = url
-                }
-            }
-            return found
-        }.value
-        guard !Task.isCancelled else { return }
+        let appURLs = try await scan(catalog, configuration.applicationDirectories, tokens)
+        guard !Task.isCancelled, generation == externalScanGeneration,
+              configuration == .current else { return }
         // A Settings toggle may have changed while the off-main scan was running.
         guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps) else {
             registry.markExternalInstallations(appURLs: [:])
