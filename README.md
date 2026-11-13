@@ -109,7 +109,9 @@ Failed tasks remain available for inspection but do not leave a spinner running.
 Downloads show Homebrew's real percentage; bulk installs/updates show completed
 app counts. Catalog refresh uses an indeterminate spinner, not an estimated
 percentage, and the catalog remains available to browse. Refresh is disabled while
-a refresh, installed-state check, startup/setup, or Homebrew maintenance is running.
+a refresh, installed-state check, standalone app-update check, startup/setup, or
+Homebrew maintenance is running. Standalone update checks and retries show their
+own busy status instead of Ready or an old failure.
 
 App names stay in their human-readable form. Clicking a name opens **Get Info**,
 with loading feedback while Homebrew retrieves details; it no longer toggles all

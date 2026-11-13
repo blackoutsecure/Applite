@@ -2,6 +2,7 @@ struct AppStatusSummary {
     enum Activity: Equatable {
         case refreshingCatalog
         case checkingApps
+        case checkingUpdates
         case working(name: String, detail: String)
         case downloading(name: String, fraction: Double)
         case failedTasks(Int)
@@ -10,7 +11,7 @@ struct AppStatusSummary {
 
         var isBusy: Bool {
             switch self {
-            case .refreshingCatalog, .checkingApps, .working, .downloading: true
+            case .refreshingCatalog, .checkingApps, .checkingUpdates, .working, .downloading: true
             case .failedTasks, .updateCheckFailed, .ready: false
             }
         }
@@ -20,10 +21,12 @@ struct AppStatusSummary {
     let taskCount: Int
     let activeTaskCount: Int
     let failedTaskCount: Int
+    let blocksCatalogRefresh: Bool
 
     init(
         isRefreshingCatalog: Bool,
         isResolvingInstalledState: Bool,
+        isRefreshingOutdated: Bool = false,
         outdatedRefreshFailed: Bool,
         operations: [(name: String, progress: CaskProgressState)]
     ) {
@@ -37,6 +40,7 @@ struct AppStatusSummary {
         taskCount = operations.count
         activeTaskCount = active.count
         failedTaskCount = operations.filter { $0.progress.isFailed }.count
+        blocksCatalogRefresh = isRefreshingCatalog || isResolvingInstalledState || isRefreshingOutdated
 
         if isRefreshingCatalog {
             activity = .refreshingCatalog
@@ -44,6 +48,8 @@ struct AppStatusSummary {
             activity = first
         } else if isResolvingInstalledState {
             activity = .checkingApps
+        } else if isRefreshingOutdated {
+            activity = .checkingUpdates
         } else if failedTaskCount > 0 {
             activity = .failedTasks(failedTaskCount)
         } else if outdatedRefreshFailed {

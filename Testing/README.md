@@ -62,6 +62,8 @@ before exactly one update-check callback runs per request, including repeated re
 Status-summary cases cover simultaneous refresh/tasks, queued or running work,
 retained failures, measured download fractions, installed-state loading, unavailable
 update checks, and completed tasks returning to Ready without a stuck spinner.
+Standalone update-check retries are verified while paused in the fake brew:
+busy lifetime and refresh gating must remain active until completion.
 App-info fixtures verify friendly names, description/version metadata, and
 compatibility with older saved info values that lack those optional fields.
 
