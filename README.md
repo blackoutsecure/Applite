@@ -112,7 +112,9 @@ Failed tasks remain available for inspection but do not leave a spinner running.
 Downloads show Homebrew's real percentage; bulk installs/updates show completed
 app counts. Catalog refresh uses an indeterminate spinner, not an estimated
 percentage, and the catalog remains available to browse. Refresh is disabled while
-a refresh, installed-state check, startup/setup, or Homebrew maintenance is running.
+a refresh, installed-state check, standalone app-update check, startup/setup, or
+Homebrew maintenance is running. Standalone update checks and retries show their
+own busy status instead of Ready or an old failure.
 
 App names stay in their human-readable form. Clicking a name or description, or
 choosing **Get Info**, opens a details page inside the main window, not a popup.
@@ -188,6 +190,10 @@ still block writes even when all source overrides have been enabled.
 
 ## App icons
 
+Favicon downloads pick up proxy preference changes without restarting Applite.
+Discovery ignores comments/script/style contents before finding the head boundary,
+uses the first base element with an href, and decodes numeric/named URL references.
+
 Applite tries its normal CaskFlow icon first. If that image fails, it reads the
 app's metadata homepage for declared favicon or Apple touch-icon links, then tries
 the site's `/favicon.ico`. A letter tile remains the offline/failure fallback.
@@ -213,6 +219,12 @@ Architecture notes are in [CLAUDE.md](CLAUDE.md).
 
 ### Externally installed apps
 
+Install rechecks the expected app bundle before running, so an unfinished detection
+scan cannot silently turn Install into Homebrew adoption. Adoption confirmation is
+bound to the selected Homebrew and installation directory; changing either requires
+a fresh confirmation, including for queued work. Detection drops superseded scans,
+and a failed post-install refresh retains the command's output alongside its error.
+
 **Settings > Apps > Installed App Detection > Detect externally installed apps** is enabled by
 default. Turn it off to stop external-app scans and remove detected apps and
 management offers from Installed. Homebrew-managed apps are
@@ -235,6 +247,14 @@ metadata and requires one exact token/full-token/tap match with an enabled cask.
 Missing, mismatched, disabled, malformed, or failed lookups block the modifying
 command and expose the reason in Active Tasks. Existing ownership protection wins
 before this check.
+
+Each operation pins its Homebrew executable and app-directory configuration.
+Ownership evidence is refreshed again after metadata verification, including
+recorded Caskroom targets in previous custom app directories. Bulk operations
+refresh shared inventories after all metadata requests, then make final override
+decisions without yielding. Changing the selection invalidates pending writes.
+Installed rows, search filtering, and totals use canonical bundle identities;
+duplicate receipts stay intact, and single/bulk installs reconcile the projection.
 
 Disabled/unavailable apps cannot offer adoption, installation, updates, or reinstall;
 cards show **Homebrew unavailable** with an explanatory tooltip. Open/Get Info remain

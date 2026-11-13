@@ -135,11 +135,18 @@ enum SingleInstanceTests {
             outdatedRefreshFailed: true, operations: []
         )
         precondition(unavailable.activity == .updateCheckFailed && !unavailable.activity.isBusy)
+        let retrying = AppStatusSummary(
+            isRefreshingCatalog: false, isResolvingInstalledState: false,
+            isRefreshingOutdated: true, outdatedRefreshFailed: true, operations: []
+        )
+        precondition(retrying.activity == .checkingUpdates && retrying.activity.isBusy && retrying.blocksCatalogRefresh,
+                     "A standalone retry must replace stale failure/Ready status and block catalog refresh")
         let ready = AppStatusSummary(
             isRefreshingCatalog: false, isResolvingInstalledState: false,
             outdatedRefreshFailed: false, operations: [operations[3]]
         )
         precondition(ready.activity == .ready && ready.activeTaskCount == 0)
+        precondition(!ready.blocksCatalogRefresh)
 
         let infoJSON = Data(#"{"token":"fixture","full_token":"example/tap/fixture","name":["Fixture App"],"desc":"Fixture description","version":"2.0","tap":"example/tap","homepage":"https://example.invalid","url":"https://example.invalid/app.zip","deprecated":false,"disabled":false}"#.utf8)
         let info = try JSONDecoder().decode(CaskAdditionalInfo.self, from: infoJSON)

@@ -11,6 +11,8 @@ enum CaskAdoptionError: LocalizedError {
     case homebrewUnavailable
     case homebrewDisabled
     case notHomebrewManaged
+    case configurationChanged
+    case confirmationRequired
 
     var errorDescription: String? {
         switch self {
@@ -34,6 +36,10 @@ enum CaskAdoptionError: LocalizedError {
             String(localized: "Homebrew has disabled this cask. Applite cannot install, adopt, update, or reinstall it.")
         case .notHomebrewManaged:
             String(localized: "This app is not installed through the selected Homebrew. Applite cannot uninstall it.")
+        case .configurationChanged:
+            String(localized: "Homebrew or the app installation directory changed. Review the current settings and confirm the command again.")
+        case .confirmationRequired:
+            String(localized: "This app is already installed. Enable Homebrew management and confirm the current command before reinstalling it.")
         }
     }
 }

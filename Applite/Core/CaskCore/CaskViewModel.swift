@@ -30,6 +30,7 @@ final class CaskViewModel {
     }
 
     var externalAppURL: URL?
+    var installedBundleURL: URL?
     var protectedAppInstallation: ProtectedAppInstallation?
     var appStoreAppURL: URL? {
         protectedAppInstallation?.source == .appStore ? protectedAppInstallation?.url : nil

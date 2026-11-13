@@ -90,6 +90,27 @@ enum FaviconResolverTests {
         ])
         precondition(FaviconResolver.candidates(in: "<link rel=icon href=/favicon.ico>", pageURL: page).count == 1)
         precondition(FaviconResolver.candidates(in: "", pageURL: URL(fileURLWithPath: "/tmp/fixture")).isEmpty)
+        let misleadingHead = """
+        <head><!-- </head> --><script>const text = "</head>";</script>
+        <style>.example::after { content: "</head>"; }</style>
+        <base target="_blank"><base href="/assets/">
+        <link rel=icon href="app.png"></head><link rel=icon href="/body.png">
+        """
+        precondition(FaviconResolver.candidates(in: misleadingHead, pageURL: page).map(\.path) == [
+            "/assets/app.png", "/favicon.ico"
+        ], "Head-like text in ignored regions and target-only bases must not hide a valid icon")
+        let references = """
+        <base href="&#47;assets&#x2f;">
+        <link rel=icon href="favicon&copy;.png?x=1&amp;y=&quot;q&quot;">
+        <link rel=icon href="&sol;other&sol;icon&period;png">
+        """
+        let decoded = FaviconResolver.candidates(in: references, pageURL: page)
+        precondition(decoded.first?.path == "/assets/favicon\u{00a9}.png")
+        precondition(decoded.first?.query == "x=1&y=%22q%22")
+        precondition(decoded.dropFirst().first?.path == "/other/icon.png")
+        precondition(FaviconResolver.candidates(
+            in: "<link rel=icon href='javascript&#58;alert(1)'>", pageURL: page
+        ).map(\.path) == ["/favicon.ico"], "Decoded URLs must still pass scheme checks")
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FaviconURLProtocol.self]

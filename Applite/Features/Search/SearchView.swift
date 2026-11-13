@@ -83,7 +83,8 @@ struct SearchView: View {
     private var displayedResults: [CaskViewModel] {
         var filtered = results
         if installedOnly {
-            filtered.removeAll { !$0.isLocallyInstalled }
+            let installed = Set(caskManager.locallyInstalledViewModels.map(\.fullToken))
+            filtered.removeAll { !installed.contains($0.fullToken) }
         }
         if hideUnpopularApps {
             filtered.removeAll { $0.downloadsIn365days <= 500 }

@@ -7,6 +7,7 @@ struct AppStatusBar: View {
         let summary = AppStatusSummary(
             isRefreshingCatalog: caskManager.isRefreshingCatalog,
             isResolvingInstalledState: caskManager.isResolvingInstalledState,
+            isRefreshingOutdated: caskManager.isRefreshingOutdated,
             outdatedRefreshFailed: caskManager.outdatedRefreshFailed,
             operations: caskManager.activeTasks.map { ($0.viewModel.name, $0.viewModel.progressState) }
         )
@@ -43,8 +44,7 @@ struct AppStatusBar: View {
                         .labelStyle(.iconOnly)
                 }
                 .disabled(
-                    caskManager.isRefreshingCatalog ||
-                    caskManager.isResolvingInstalledState ||
+                    summary.blocksCatalogRefresh ||
                     !caskManager.bootstrap.isBrewReady ||
                     caskManager.bootstrap.needsSetupOverlay
                 )
@@ -90,6 +90,8 @@ struct AppStatusBar: View {
             statusLabel(Text("Refreshing app catalog..."), busy: busy)
         case .checkingApps:
             statusLabel(Text("Checking installed apps and updates..."), busy: busy)
+        case .checkingUpdates:
+            statusLabel(Text("Checking app updates..."), busy: busy)
         case .working(let name, let detail):
             if detail.isEmpty {
                 statusLabel(Text("Working on \(name)..."), busy: busy)
