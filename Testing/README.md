@@ -1,5 +1,41 @@
 # Applite test harness
 
+## Non-destructive external-install regression tests
+
+These tests use the real app's Debug module, isolated databases, temporary app
+directories, and a temporary fake `brew`. They verify artifact decoding (including
+renamed targets), v1 database migration/FTS preservation, managed/external/missing
+state precedence, full-token identity, external filter membership/counts, command
+confirmation/quoting, the default-enabled detection setting and immediate disable
+guards (including pending confirmations), and queued adoption success/failure with stderr capture.
+They do not launch Applite, run real Homebrew, modify installed apps, show notification
+permission prompts, or use your Applite preferences/database.
+
+```sh
+xcodebuild -quiet -project Applite.xcodeproj -scheme Applite -configuration Debug \
+  -destination 'platform=macOS' -derivedDataPath /tmp/applite-build \
+  CODE_SIGNING_ALLOWED=NO build
+bash Testing/run-external-install-tests.sh /tmp/applite-build
+```
+
+For a visual/end-to-end check in a disposable VM, place a known cask's expected
+bundle in `/Applications` without installing its cask in the selected Homebrew.
+Refresh Applite and check its **Installed externally** card, sidebar badge, and
+search filter. Cancel adoption once to verify no change; confirm it and check the
+displayed command, then verify the app becomes **Installed** and leaves the external
+list. Trigger a failed adoption and use the card's terminal button to inspect stderr;
+the external status and count must remain unchanged. Also check a managed app and
+an absent app still offer Open and Install respectively.
+
+In **Settings > Brew > App Sources**, verify **Detect externally installed apps**
+starts enabled. Disable it while viewing the external list or using its search
+filter: the filters should disappear, navigation should leave the hidden external
+list, and external status/counts should clear immediately without changing managed
+apps. Re-enable it and check that local external apps are rediscovered without a
+catalog download.
+
+## Guided VM harness
+
 `applite_test.py` is a **guided** end-to-end test harness. It doesn't automate the
 UI — *you* perform each action in the real Applite window, and after each step the
 script independently verifies the real result via the Homebrew CLI + filesystem

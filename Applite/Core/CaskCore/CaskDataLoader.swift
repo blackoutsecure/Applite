@@ -92,8 +92,9 @@ final class CaskDataLoader {
     // MARK: - Search
 
     /// Searches casks using FTS5 and returns view models (reuses existing instances)
-    func search(query: String, limit: Int = 50) async throws -> [CaskViewModel] {
-        let records = try await dbService.search(query: query, limit: limit)
+    func search(query: String, limit: Int = 50, externalOnly: Bool = false) async throws -> [CaskViewModel] {
+        let records = try await dbService.search(query: query, limit: externalOnly ? Int.max : limit)
+        // Keep unresolved models too: the view filters reactively when the disk scan finishes.
         return registry.viewModels(for: records)
     }
 
@@ -114,6 +115,41 @@ final class CaskDataLoader {
         let records = try await dbService.fetchCasks(forTokens: Array(tokens))
         _ = registry.viewModels(for: records)
         registry.markInstalled(tokens: tokens)
+
+        try await refreshExternalInstallations()
+    }
+
+    func refreshExternalInstallations() async throws {
+        guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps) else {
+            registry.markExternalInstallations(appURLs: [:])
+            return
+        }
+
+        // Scan the full catalog, not just curated/search results, so totals include unbrowsed apps.
+        let catalog = try await dbService.fetchAllCasks()
+        let directories = InstalledAppLocator.applicationDirectories
+        let tokens = Set(registry.installedViewModels.map(\.fullToken))
+        let appURLs = await Task.detached {
+            var found: [CaskId: URL] = [:]
+            for record in catalog where !tokens.contains(record.fullToken) {
+                if let url = ExternalAppDetector.appURL(
+                    bundleNames: record.appBundleNames,
+                    displayName: record.name,
+                    directories: directories
+                ) {
+                    found[record.fullToken] = url
+                }
+            }
+            return found
+        }.value
+        guard !Task.isCancelled else { return }
+        // A Settings toggle may have changed while the off-main scan was running.
+        guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps) else {
+            registry.markExternalInstallations(appURLs: [:])
+            return
+        }
+        _ = registry.viewModels(for: catalog)
+        registry.markExternalInstallations(appURLs: appURLs)
     }
 
     /// Re-queries brew CLI for outdated casks, ensures view models exist for each,

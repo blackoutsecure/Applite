@@ -19,6 +19,7 @@ struct BrewSettingsView: View {
     @AppStorage(Preferences.customUserBrewPath) var customUserBrewPath
     @AppStorage(Preferences.brewPathOption) var brewPathOption
     @AppStorage(Preferences.includeCasksFromTaps) var includeCasksFromTaps
+    @AppStorage(Preferences.detectExternallyInstalledApps) var detectExternallyInstalledApps
     @AppStorage(Preferences.annexUpdateFrequency) var annexUpdateFrequency
 
     /// Applite's own annex brew is the selected one.
@@ -58,6 +59,9 @@ struct BrewSettingsView: View {
         .onAppear {
             previousBrewOption = brewPathOption
             previousIncludeCasksFromTaps = includeCasksFromTaps
+        }
+        .onChange(of: detectExternallyInstalledApps) { _, _ in
+            caskManager.applyExternalAppDetectionSetting(surfacingErrorsIn: alert)
         }
     }
 
@@ -163,6 +167,15 @@ struct BrewSettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Include Third-Party Taps", comment: "Brew settings tap toggle title")
                     Text("Also show apps from Homebrew taps (third-party repositories) you've added manually. (Homebrew: `tap`)", comment: "Brew settings tap toggle description")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Toggle(isOn: $detectExternallyInstalledApps) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Detect externally installed apps")
+                    Text("Find apps installed outside Homebrew and offer to adopt them. Turning this off hides external app status and filters without changing your apps.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

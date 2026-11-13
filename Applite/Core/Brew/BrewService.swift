@@ -42,6 +42,16 @@ struct BrewStreamError: Error {
 final class BrewService {
     private(set) var activeTasks: [ActiveBrewTask] = []
 
+    private let notify: @MainActor (String, String, NotificationReason) async -> Void
+
+    init(
+        notify: @escaping @MainActor (String, String, NotificationReason) async -> Void = { title, body, reason in
+            await sendNotification(title: title, body: body, reason: reason)
+        }
+    ) {
+        self.notify = notify
+    }
+
     /// Asks the owner (`CaskManager`) to re-resolve brew when an operation finds the selected path
     /// invalid, returning whether brew ended up usable. Wired to `HomebrewBootstrap.run()` so this
     /// service reports the fault into the one owned brew state instead of deciding on its own how a
@@ -79,7 +89,11 @@ final class BrewService {
     /// Installs the cask. Returns the tracking task so callers (e.g. `installAll`) can
     /// await completion and serialize; discardable for the common fire-and-forget case.
     @discardableResult
-    func install(_ vm: CaskViewModel) -> Task<Void, Never> {
+    func install(
+        _ vm: CaskViewModel,
+        arguments: [String]? = nil,
+        reconcile: (@MainActor () async throws -> Void)? = nil
+    ) -> Task<Void, Never> {
         return runTask(for: vm) {
             Self.logger.info("Cask \"\(vm.token)\" installation started")
 
@@ -88,8 +102,7 @@ final class BrewService {
             // of erroring — and it's identical to a plain install when nothing is there.
             // Use `fullToken` (like every sibling op) so a tapped token that collides with a core
             // cask installs the intended cask, not the core one.
-            var arguments = ["install", "--cask", vm.fullToken, "--force"]
-            arguments.append(contentsOf: Self.appdirArguments())
+            let arguments = arguments ?? Self.installArguments(fullToken: vm.fullToken)
 
             // Setup progress
             vm.progressState = .busy(withTask: "")
@@ -134,15 +147,35 @@ final class BrewService {
                 return
             }
 
+            if let reconcile {
+                do {
+                    try await reconcile()
+                } catch {
+                    await self.showFailure(
+                        for: vm,
+                        error: error,
+                        output: error.localizedDescription,
+                        failureTitle: String(localized: "Couldn't refresh installed apps"),
+                        failureMessage: error.localizedDescription
+                    )
+                    return
+                }
+            }
+
             await self.showSuccess(
                 for: vm,
                 logMessage: "Successfully installed cask \(vm.token)",
                 notificationTitle: String(localized: "\(vm.name) successfully installed!", comment: "Successful app install notification")
             )
 
-            // Update state
-            vm.isInstalled = true
+            if reconcile == nil {
+                vm.isInstalled = true
+            }
         }
+    }
+
+    static func installArguments(fullToken: String) -> [String] {
+        ["install", "--cask", fullToken, "--force"] + appdirArguments()
     }
 
     /// Uninstalls the cask
@@ -689,7 +722,7 @@ final class BrewService {
 
         if failedNames.isEmpty {
             Self.logger.info("Batch \(kind.subcommand): \(succeeded) succeeded")
-            await sendNotification(title: successTitle, body: "", reason: .success)
+            await notify(successTitle, "", .success)
         } else {
             let title = kind == .install
                 ? String(localized: "\(succeeded) apps installed, \(failedNames.count) failed", comment: "Bulk install partial-failure notification")
@@ -699,7 +732,7 @@ final class BrewService {
             // No alert: each failed cask keeps its own error row, and those rows stay in Active
             // Tasks (badged) after the batch ends — a persistent, actionable list beats a modal
             // summary the user dismisses once and can't get back.
-            await sendNotification(title: title, body: names, reason: .failure)
+            await notify(title, names, .failure)
         }
     }
 
@@ -793,7 +826,7 @@ final class BrewService {
         try? await Task.sleep(for: .seconds(2))
         vm.progressState = .idle
 
-        await sendNotification(title: notificationTitle, body: notificationMessage, reason: .success)
+        await notify(notificationTitle, notificationMessage, .success)
     }
 
     /// Registers a failed task on the cask itself, and notifies.
@@ -813,6 +846,6 @@ final class BrewService {
 
         vm.progressState = .failed(output: output)
 
-        await sendNotification(title: failureTitle, body: failureMessage, reason: .failure)
+        await notify(failureTitle, failureMessage, .failure)
     }
 }

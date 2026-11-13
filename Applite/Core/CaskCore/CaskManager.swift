@@ -69,6 +69,8 @@ final class CaskManager {
     /// to render a number.
     var installedCount: Int { registry.installedCount }
     var outdatedCount: Int { registry.outdatedCount }
+    var externalInstalledViewModels: [CaskViewModel] { registry.externalInstalledViewModels }
+    var externalInstalledCount: Int { registry.externalInstalledCount }
     var activeTasks: [ActiveBrewTask] { brewService.activeTasks }
     var batchProgress: BatchProgress? { brewService.batchProgress }
 
@@ -123,6 +125,66 @@ final class CaskManager {
         brewService.install(cask)
     }
 
+    func applyExternalAppDetectionSetting(surfacingErrorsIn errorSurface: AlertManager? = nil) {
+        guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps) else {
+            registry.markExternalInstallations(appURLs: [:])
+            return
+        }
+        let surface = errorSurface ?? alert
+        Task {
+            do {
+                try await dataLoader.refreshExternalInstallations()
+            } catch {
+                Self.logger.error("External app detection failed: \(error.localizedDescription)")
+                surface.show(error: error, title: "Couldn't detect externally installed apps")
+            }
+        }
+    }
+
+    func confirmAdoption(_ cask: CaskViewModel) {
+        guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps),
+              cask.isInstalledExternally, !(cask.warning?.isDisabled ?? false) else { return }
+        let arguments = BrewService.installArguments(fullToken: cask.fullToken)
+        let preview = (["brew"] + arguments).map { argument in
+            if argument.range(of: #"^[A-Za-z0-9_./@=+-]+$"#, options: .regularExpression) != nil {
+                return argument
+            }
+            return "'" + argument.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        }.joined(separator: " ")
+        var message = String(localized: "This will reinstall the app via Homebrew cask so updates are tracked by Homebrew.")
+        message += "\n\n\(preview)"
+        if let warning = cask.warning {
+            let detail: String
+            switch warning {
+            case .hasCaveat(let caveat):
+                detail = caveat
+            case .deprecated(let date, let reason):
+                detail = String(localized: "**This app is deprecated**\n**Reason:** \(reason)\n**Date:** \(date)")
+            case .disabled:
+                return
+            }
+            message += "\n\n" + detail.limitedToLines(5, suffix: "...")
+        }
+        alert.show(
+            title: "Adopt app into Homebrew management?",
+            message: message,
+            actions: [
+                AppAlert.Action("Adopt with Homebrew") { [weak self] in
+                    guard let self,
+                          UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps),
+                          cask.isInstalledExternally else { return }
+                    self.brewService.install(cask, arguments: arguments) {
+                        try await self.dataLoader.refreshInstalled()
+                        guard cask.isInstalled else {
+                            throw CaskAdoptionError.notManaged
+                        }
+                    }
+                },
+                AppAlert.Action("Cancel", role: .cancel)
+            ]
+        )
+    }
+
     func uninstall(_ cask: CaskViewModel, zap: Bool = false) {
         brewService.uninstall(cask, zap: zap)
     }
@@ -165,8 +227,8 @@ final class CaskManager {
 
     // MARK: - Search Forwarding
 
-    func search(query: String) async throws -> [CaskViewModel] {
-        try await dataLoader.search(query: query)
+    func search(query: String, externalOnly: Bool = false) async throws -> [CaskViewModel] {
+        try await dataLoader.search(query: query, externalOnly: externalOnly)
     }
     
     // MARK: - Data Loading
