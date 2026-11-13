@@ -1,5 +1,33 @@
 # Applite test harness
 
+## Non-destructive favicon tests
+
+```sh
+bash Testing/run-favicon-tests.sh
+bash Testing/run-favicon-tests.sh --live
+```
+
+The default run compiles the production resolver and uses an isolated URLProtocol
+fixture session. It checks declared icon and touch-icon links, redirects, HTML
+base URLs, relative/protocol-relative paths, entity escaping, duplicates, URL
+scheme/credential rejection, candidate limits, concurrent/cached discovery,
+offline/HTTP/non-HTML failures, and the exact 128 KiB HTML cutoff.
+
+`--live` additionally checks the real Copilot CLI primary icon URL, resolves its
+metadata homepage, downloads the selected website icon, and decodes its pixels.
+This performs public HTTP requests only: no GUI launch, Homebrew operations,
+application changes, or access to the user's database/preferences.
+
+For a manual UI check, verify a working primary icon stays unchanged and makes no
+homepage request. Search for GitHub Copilot CLI and verify its missing primary
+icon falls back to the GitHub Docs favicon. Check the same behavior in migration
+selection rows. When offline or when all candidate images fail, the letter tile
+must remain visible without an endless spinner. Check that the fallback image
+cache cannot replace a primary icon and that scrolling repeated rows shares
+discovery requests. Missing favicons are logged, not presented as blocking alerts.
+
+## Guided end-to-end harness
+
 `applite_test.py` is a **guided** end-to-end test harness. It doesn't automate the
 UI — *you* perform each action in the real Applite window, and after each step the
 script independently verifies the real result via the Homebrew CLI + filesystem
