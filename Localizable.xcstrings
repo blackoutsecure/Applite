@@ -11303,7 +11303,21 @@
     "Applite is already running, but its window couldn't be opened. Select Applite in the Dock." : {},
     "Applite is already starting. Please try again in a moment." : {},
     "Couldn't start Applite" : {},
-    "Refreshing app catalog..." : {}
+    "Refreshing app catalog..." : {},
+    "%@: %@" : {},
+    "Checking installed apps and updates..." : {},
+    "Couldn't check app updates" : {},
+    "Downloading %@: %@" : {},
+    "Failed tasks: %lld" : {},
+    "Homebrew needs attention" : {},
+    "Homebrew setup complete" : {},
+    "Ready" : {},
+    "Setting up Homebrew..." : {},
+    "Starting Applite..." : {},
+    "Tasks (%lld)" : {},
+    "Tasks: %lld active, %lld failed" : {},
+    "View running, queued, and failed tasks" : {},
+    "Working on %@..." : {}
   },
   "version" : "1.1"
 }

@@ -9,6 +9,9 @@ lock files, explicit I/O failures, and selecting Uninstall before opening Settin
 including repeat requests when Uninstall is already selected.
 They also verify that the Updates pane is selected and Settings is opened or focused
 before exactly one update-check callback runs per request, including repeated requests.
+Status-summary cases cover simultaneous refresh/tasks, queued or running work,
+retained failures, measured download fractions, installed-state loading, unavailable
+update checks, and completed tasks returning to Ready without a stuck spinner.
 
 For a manual UI check, launch Applite, then attempt to launch another copy with the
 same bundle identifier. The existing main window should come forward without an
@@ -32,10 +35,19 @@ disabled. Cancel or dismiss the result; do not install an update during this che
 
 Choose **Refresh App Catalog** from the app menu. The main window should show a
 spinner and **Refreshing app catalog...** status throughout the existing refresh,
-without replacing the catalog or blocking browsing. The status should disappear
-when the operation finishes, including after a failure; failures must still use the
-existing error alert. Also verify the status appears when a refresh is started
-from the Brew settings refresh prompt.
+without replacing the catalog or blocking browsing. The spinner and refresh label
+should clear when the operation finishes, returning to current activity or Ready;
+failures must still use the existing error alert. Also verify the status appears
+when a refresh is started from the Brew settings refresh prompt.
+
+Verify the bottom bar remains visible while idle and its refresh icon starts the
+same manual catalog refresh. It must disable during refresh, installed-state
+loading, startup/setup, or Homebrew maintenance, and re-enable afterward. Click the
+Tasks shortcut with running/queued tasks or retained failures and verify it opens
+Active Tasks, clearing any active search. In a disposable test environment, check
+install/update/uninstall labels, real download percentages, bulk completed counts,
+and failures that show a warning rather than an endless spinner. Opening Tasks or
+refreshing the catalog must not cancel an ongoing operation.
 
 `applite_test.py` is a **guided** end-to-end test harness. It doesn't automate the
 UI — *you* perform each action in the real Applite window, and after each step the

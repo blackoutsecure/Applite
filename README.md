@@ -101,10 +101,14 @@ The app menu's **Check for Updates...** action selects and opens or focuses
 **Settings > Updates** before starting the existing Sparkle update check.
 It remains disabled while a check is in progress.
 
-Manual app-catalog refreshes show a persistent **Refreshing app catalog...** status
-with an indeterminate spinner in the main window. The existing catalog remains
-available to browse while the refresh runs. No estimated percentage is displayed
-because network requests and Homebrew checks do not share a measurable total.
+The main window has a persistent bottom status bar with a **Refresh App Catalog**
+button and a shortcut to **Active Tasks**. It shows startup/setup, catalog refresh,
+installed-app checks, queued/running installs, updates, uninstalls, and failed tasks.
+Failed tasks remain available for inspection but do not leave a spinner running.
+Downloads show Homebrew's real percentage; bulk installs/updates show completed
+app counts. Catalog refresh uses an indeterminate spinner, not an estimated
+percentage, and the catalog remains available to browse. Refresh is disabled while
+a refresh, installed-state check, startup/setup, or Homebrew maintenance is running.
 
 ## Built With
 

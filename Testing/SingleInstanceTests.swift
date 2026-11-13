@@ -97,7 +97,51 @@ enum SingleInstanceTests {
         settings.showUpdates(openSettings: showUpdateSettings, checkForUpdates: checkForUpdates)
         precondition(updateEvents == ["settings", "check", "settings", "check"])
 
-        print("PASS: single-instance ownership, concurrent processes, release, abrupt exit, stale files, I/O errors, and Uninstall/Updates routing")
+        let operations: [(name: String, progress: CaskProgressState)] = [
+            ("Failed app", .failed(output: "fixture error")),
+            ("Installing app", .busy(withTask: "Installing")),
+            ("Downloading app", .downloading(percent: 0.42)),
+            ("Completed app", .success)
+        ]
+        let running = AppStatusSummary(
+            isRefreshingCatalog: false, isResolvingInstalledState: true,
+            outdatedRefreshFailed: false, operations: operations
+        )
+        precondition(running.activity == .working(name: "Installing app", detail: "Installing"))
+        precondition(running.activeTaskCount == 2 && running.failedTaskCount == 1 && running.taskCount == 4)
+        let refreshing = AppStatusSummary(
+            isRefreshingCatalog: true, isResolvingInstalledState: true,
+            outdatedRefreshFailed: false, operations: operations
+        )
+        precondition(refreshing.activity == .refreshingCatalog && refreshing.activeTaskCount == 2)
+        let failed = AppStatusSummary(
+            isRefreshingCatalog: false, isResolvingInstalledState: false,
+            outdatedRefreshFailed: false, operations: [operations[0]]
+        )
+        precondition(failed.activity == .failedTasks(1) && !failed.activity.isBusy)
+        precondition(failed.activeTaskCount == 0)
+        let downloading = AppStatusSummary(
+            isRefreshingCatalog: false, isResolvingInstalledState: false,
+            outdatedRefreshFailed: false, operations: [operations[2]]
+        )
+        precondition(downloading.activity == .downloading(name: "Downloading app", fraction: 0.42))
+        let loading = AppStatusSummary(
+            isRefreshingCatalog: false, isResolvingInstalledState: true,
+            outdatedRefreshFailed: false, operations: []
+        )
+        precondition(loading.activity == .checkingApps && loading.activity.isBusy)
+        let unavailable = AppStatusSummary(
+            isRefreshingCatalog: false, isResolvingInstalledState: false,
+            outdatedRefreshFailed: true, operations: []
+        )
+        precondition(unavailable.activity == .updateCheckFailed && !unavailable.activity.isBusy)
+        let ready = AppStatusSummary(
+            isRefreshingCatalog: false, isResolvingInstalledState: false,
+            outdatedRefreshFailed: false, operations: [operations[3]]
+        )
+        precondition(ready.activity == .ready && ready.activeTaskCount == 0)
+
+        print("PASS: single-instance locking, Uninstall/Updates routing, and status-bar activity/failure/progress summaries")
     }
 
     private static func startChild(mode: String, url: URL) throws -> (process: Process, input: Pipe, output: Pipe) {
