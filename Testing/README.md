@@ -42,6 +42,10 @@ should clear when the operation finishes, returning to current activity or Ready
 failures must still use the existing error alert. Also verify the status appears
 when a refresh is started from the Brew settings refresh prompt.
 
+In Updates, verify the self-updating-app checkbox and its info popover are absent
+from the toolbar, while Refresh and search remain. The self-updating-app preference
+must remain available in Settings and still control the next outdated-app check.
+
 Verify the bottom bar remains visible while idle and its refresh icon starts the
 same manual catalog refresh. It must disable during refresh, installed-state
 loading, startup/setup, or Homebrew maintenance, and re-enable afterward. Click the

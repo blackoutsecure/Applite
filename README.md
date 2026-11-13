@@ -117,6 +117,9 @@ version, installation details, source, links, download size when available, and
 deprecation/disablement information. Homebrew tokens remain selectable there.
 Cmd-click continues to open the app's website.
 
+**Include Self-Updating Apps** is configured in Settings, not duplicated in the
+Updates toolbar. Updates retains its refresh button and search.
+
 ## Built With
 
 
