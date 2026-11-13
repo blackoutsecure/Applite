@@ -55,6 +55,11 @@ final class CaskViewModel {
 
     var isInstalledExternally: Bool { installationState == .externalInstalled }
     var isLocallyInstalled: Bool { isInstalled || isInstalledExternally }
+    var installedManagementSourceName: String? {
+        guard isLocallyInstalled else { return nil }
+        if let source = protectedAppInstallation?.source { return source.name }
+        return isInstalled ? String(localized: "Homebrew") : String(localized: "Unknown")
+    }
     var isApplite: Bool { record.isApplite }
 
     /// Whether the cask has an update available
