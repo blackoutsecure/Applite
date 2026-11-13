@@ -8,7 +8,7 @@
 import SwiftUI
 import Sparkle
 
-/// This view is included in the installed section so users can update and uninstall Applite itself
+/// Optional diagnostic self-card; normal update and uninstall actions remain in the menu and Settings.
 struct AppliteAppView: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(SettingsNavigation.self) private var settingsNavigation

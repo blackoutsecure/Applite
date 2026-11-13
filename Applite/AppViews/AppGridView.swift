@@ -16,6 +16,8 @@ struct AppGridView: View {
     let casks: [CaskViewModel]
     var appRole: AppRole
 
+    @AppStorage(Preferences.showAppliteInInstalledList) private var showAppliteInInstalledList
+
     let columns = [
         GridItem(.adaptive(minimum: 320))
     ]
@@ -27,7 +29,7 @@ struct AppGridView: View {
 
         ScrollView {
             LazyVGrid(columns: columns, spacing: 20) {
-                if appRole == .installed {
+                if appRole == .installed && showAppliteInInstalledList {
                     AppliteAppView()
                 }
 

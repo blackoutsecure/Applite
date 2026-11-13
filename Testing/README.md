@@ -24,7 +24,8 @@ already running before this fix must be quit once; the new version does not
 terminate another copy's in-progress Homebrew work.
 
 Also open **Settings > Uninstall**, then choose **Uninstall Applite...** from the app
-menu repeatedly and use the Applite self-card's trash action. Each entry point should
+menu repeatedly and, with the [diagnostic self-card](#optional-applite-self-card)
+enabled, use its trash action. Each entry point should
 select and focus the same Settings window, retaining the current uninstall options.
 Repeat from another Settings tab and with Settings closed or minimized. Merely
 opening the pane must not start an uninstall; do not confirm an actual uninstall
@@ -63,6 +64,34 @@ and existing installation/source details; repeat the action and confirm the same
 unchanged info value focuses its existing window. Cmd-click must open only the
 homepage, not details. With an unavailable brew, the request must surface an error
 and re-enable the title/menu action for retry.
+
+## Optional Applite self-card
+
+There is no Advanced Debug settings pane. The internal preference
+`Preferences.showAppliteInInstalledList` defaults to **false**, including in Debug
+builds, so normal Installed lists do not contain Applite itself. The ordinary
+catalog entry stays excluded from app grids regardless of this preference; opting
+in restores only the dedicated diagnostic self-card in Installed.
+
+Quit Applite before changing the preference, then reopen it afterward. To enable:
+
+```sh
+defaults write dev.aerolite.Applite showAppliteInInstalledList -bool true
+```
+
+To disable again:
+
+```sh
+defaults write dev.aerolite.Applite showAppliteInInstalledList -bool false
+```
+
+Use your build's bundle identifier instead if it differs. These commands affect
+only self-card visibility, not installed-app detection, Homebrew receipts, or
+update/uninstall availability in the app menu and Settings. Verify a fresh
+preference domain hides the card, opting in shows exactly one self-card only in
+Installed, and opting out hides it again without changing the other app cards.
+
+## Guided end-to-end harness
 
 `applite_test.py` is a **guided** end-to-end test harness. It doesn't automate the
 UI — *you* perform each action in the real Applite window, and after each step the

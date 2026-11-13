@@ -94,7 +94,7 @@ When upgrading, quit any older copies that are already running once. The new
 version does not terminate another copy's in-progress Homebrew work.
 
 All self-uninstall entry points share **Settings > Uninstall**. Choosing Uninstall
-from the app menu or Applite's app card selects that pane and opens or focuses the
+from the app menu or optional diagnostic self-card selects that pane and opens or focuses the
 existing Settings window instead of creating a separate uninstaller.
 
 The app menu's **Check for Updates...** action selects and opens or focuses
@@ -119,6 +119,11 @@ Cmd-click continues to open the app's website.
 
 **Include Self-Updating Apps** is configured in Settings, not duplicated in the
 Updates toolbar. Updates retains its refresh button and search.
+
+Applite does not show itself in the app lists by default. Its update and uninstall
+actions remain in the app menu and Settings. A default-off, internal developer
+preference can restore the Installed self-card for diagnostics; see the
+[diagnostic instructions](Testing/README.md#optional-applite-self-card).
 
 ## Built With
 
