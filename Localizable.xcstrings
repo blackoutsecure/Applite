@@ -1226,7 +1226,8 @@
             "value" : "İleri Düzey"
           }
         }
-      }
+      },
+      "extractionState" : "stale"
     },
     "After reinstalling, all currently installed apps will be unlinked from Applite. They won't be deleted, but you won't be able to update or uninstall them via Applite." : {
       "comment" : "Brew reinstall warning",

@@ -49,7 +49,6 @@ struct BrewSettingsView: View {
             annexUpdateSettings
             tapSettings
             appdirSettings
-            otherFlags
         }
         .formStyle(.grouped)
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -164,6 +163,8 @@ struct BrewSettingsView: View {
 
     var tapSettings: some View {
         Section("App Sources") {
+            GreedyUpgradeToggle()
+
             Toggle(isOn: $includeCasksFromTaps) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Include Third-Party Taps", comment: "Brew settings tap toggle title")
@@ -197,12 +198,6 @@ struct BrewSettingsView: View {
     var appdirSettings: some View {
         Section("Installation Location") {
             AppdirSelectorView()
-        }
-    }
-
-    var otherFlags: some View {
-        Section("Advanced") {
-            GreedyUpgradeToggle()
         }
     }
 
