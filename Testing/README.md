@@ -12,6 +12,8 @@ before exactly one update-check callback runs per request, including repeated re
 Status-summary cases cover simultaneous refresh/tasks, queued or running work,
 retained failures, measured download fractions, installed-state loading, unavailable
 update checks, and completed tasks returning to Ready without a stuck spinner.
+App-info fixtures verify friendly names, description/version metadata, and
+compatibility with older saved info values that lack those optional fields.
 
 For a manual UI check, launch Applite, then attempt to launch another copy with the
 same bundle identifier. The existing main window should come forward without an
@@ -48,6 +50,15 @@ Active Tasks, clearing any active search. In a disposable test environment, chec
 install/update/uninstall labels, real download percentages, bulk completed counts,
 and failures that show a warning rather than an endless spinner. Opening Tasks or
 refreshing the catalog must not cancel an ongoing operation.
+
+Click an app's name in Discover, search, Installed, and Updates. It must keep its
+friendly name, show a loading indicator during the request, and open the same
+Get Info destination as the ellipsis/right-click menu. Other cards' names must not
+change. Verify the info window's friendly title, description, available version,
+and existing installation/source details; repeat the action and confirm the same
+unchanged info value focuses its existing window. Cmd-click must open only the
+homepage, not details. With an unavailable brew, the request must surface an error
+and re-enable the title/menu action for retry.
 
 `applite_test.py` is a **guided** end-to-end test harness. It doesn't automate the
 UI — *you* perform each action in the real Applite window, and after each step the

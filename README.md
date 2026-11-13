@@ -110,7 +110,15 @@ app counts. Catalog refresh uses an indeterminate spinner, not an estimated
 percentage, and the catalog remains available to browse. Refresh is disabled while
 a refresh, installed-state check, startup/setup, or Homebrew maintenance is running.
 
+App names stay in their human-readable form. Clicking a name opens **Get Info**,
+with loading feedback while Homebrew retrieves details; it no longer toggles all
+cards to cask tokens. The info window shows the app name, description, available
+version, installation details, source, links, download size when available, and
+deprecation/disablement information. Homebrew tokens remain selectable there.
+Cmd-click continues to open the app's website.
+
 ## Built With
+
 
 Swift and SwiftUI, targeting macOS 14 so `@Observable` and `NavigationSplitView` are available without back-deployment shims. No Combine. The cask catalog is a local SQLite database (GRDB.swift, WAL mode) synced from the Homebrew JSON API, with FTS5 and BM25 ranking for full-catalog search. Loading is two-stage: SQLite paints the UI immediately, then `brew list --cask` and `brew outdated --cask` fill in installed and outdated state reactively, so nothing blocks on the brew CLI.
 

@@ -141,7 +141,21 @@ enum SingleInstanceTests {
         )
         precondition(ready.activity == .ready && ready.activeTaskCount == 0)
 
-        print("PASS: single-instance locking, Uninstall/Updates routing, and status-bar activity/failure/progress summaries")
+        let infoJSON = Data(#"{"token":"fixture","full_token":"example/tap/fixture","name":["Fixture App"],"desc":"Fixture description","version":"2.0","tap":"example/tap","homepage":"https://example.invalid","url":"https://example.invalid/app.zip","deprecated":false,"disabled":false}"#.utf8)
+        let info = try JSONDecoder().decode(CaskAdditionalInfo.self, from: infoJSON)
+        precondition(info.displayName == "Fixture App" && info.desc == "Fixture description" && info.version == "2.0")
+        guard var legacyJSON = try JSONSerialization.jsonObject(with: infoJSON) as? [String: Any] else {
+            preconditionFailure("Expected an app-info JSON object")
+        }
+        for key in ["name", "desc", "version"] {
+            legacyJSON.removeValue(forKey: key)
+        }
+        let legacy = try JSONDecoder().decode(
+            CaskAdditionalInfo.self, from: JSONSerialization.data(withJSONObject: legacyJSON)
+        )
+        precondition(legacy.displayName == "example/tap/fixture" && legacy.desc == nil && legacy.version == nil)
+
+        print("PASS: single-instance locking, Settings routing, activity summaries, and app-info metadata compatibility")
     }
 
     private static func startChild(mode: String, url: URL) throws -> (process: Process, input: Pipe, output: Pipe) {

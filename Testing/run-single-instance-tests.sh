@@ -10,6 +10,7 @@ xcrun swiftc -parse-as-library -swift-version 6 -target "$(uname -m)-apple-macos
     "$repo/Applite/Features/Settings/SettingsNavigation.swift" \
     "$repo/Applite/Core/CaskCore/CaskProgressState.swift" \
     "$repo/Applite/Core/Models/AppStatusSummary.swift" \
+    "$repo/Applite/Core/Models/CaskAdditionalInfo.swift" \
     "$repo/Testing/SingleInstanceTests.swift" \
     -o "$test_dir/SingleInstanceTests"
 "$test_dir/SingleInstanceTests"

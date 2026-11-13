@@ -25,6 +25,8 @@ struct AppView: View {
 
     @Environment(CaskManager.self) var caskManager
 
+    @State private var isLoadingInfo = false
+
     // Alerts
     @State var failureAlertMessage = ""
     @State var showingFailureAlert = false
@@ -43,7 +45,7 @@ struct AppView: View {
 
     var body: some View {
         HStack {
-            IconAndDescriptionView(cask: cask)
+            IconAndDescriptionView(cask: cask, isLoadingDetails: isLoadingInfo, showDetails: showInfo)
             IconsAndWarnings(cask: cask)
             actionsView
         }
@@ -138,11 +140,10 @@ struct AppView: View {
     }
 
     private var getInfoButton: some View {
-        Button {
-            Task { await getInfo() }
-        } label: {
+        Button(action: showInfo) {
             Label("Get Info", systemImage: "info")
         }
+        .disabled(isLoadingInfo)
     }
 
     /// Ellipsis button that opens the "more options" menu (native dropdown).
@@ -158,6 +159,15 @@ struct AppView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("More options")
+    }
+
+    private func showInfo() {
+        guard !isLoadingInfo else { return }
+        isLoadingInfo = true
+        Task {
+            defer { isLoadingInfo = false }
+            await getInfo()
+        }
     }
 
     private func getInfo() async {
