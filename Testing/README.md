@@ -145,6 +145,11 @@ Installed, and opting out hides it again without changing the other app cards.
 
 ## Non-destructive favicon tests
 
+Review fixtures cover head-like text inside scripts/styles/comments, target-only
+base elements, numeric/named character references and decoded scheme rejection.
+The module harness also verifies downloader reuse and replacement after an
+effective proxy change without making an image network request.
+
 ```sh
 bash Testing/run-favicon-tests.sh
 bash Testing/run-favicon-tests.sh --live

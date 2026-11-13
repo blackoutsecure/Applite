@@ -130,6 +130,10 @@ preference can restore the Installed self-card for diagnostics; see the
 
 ## App icons
 
+Favicon downloads pick up proxy preference changes without restarting Applite.
+Discovery ignores comments/script/style contents before finding the head boundary,
+uses the first base element with an href, and decodes numeric/named URL references.
+
 Applite tries its normal CaskFlow icon first. If that image fails, it reads the
 app's metadata homepage for declared favicon or Apple touch-icon links, then tries
 the site's `/favicon.ico`. A letter tile remains the offline/failure fallback.

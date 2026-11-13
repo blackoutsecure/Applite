@@ -15,6 +15,8 @@ struct AppIconView: View {
     @State private var faviconURLs: [URL] = []
     @State private var faviconFailed = false
     @Environment(\.displayScale) private var displayScale
+    @AppStorage(Preferences.networkProxyEnabled) private var proxyEnabled
+    @AppStorage(Preferences.preferredProxyType) private var preferredProxyType
 
     let iconURL: URL
     /// App display name — its first letter is shown in the monogram fallback.
@@ -25,12 +27,23 @@ struct AppIconView: View {
 
     private var cornerRadius: CGFloat { size * 0.2 }
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Applite", category: "AppIconView")
-    private static let faviconDownloader: ImageDownloader = {
+    @MainActor private static var cachedFaviconDownloader: ImageDownloader?
+
+    @MainActor
+    static func faviconDownloader(configuration: URLSessionConfiguration) -> ImageDownloader {
+        if let downloader = cachedFaviconDownloader,
+           NSDictionary(dictionary: downloader.sessionConfiguration.connectionProxyDictionary ?? [:])
+            .isEqual(to: configuration.connectionProxyDictionary ?? [:]) {
+            return downloader
+        }
         let downloader = ImageDownloader(name: "website-favicons")
         downloader.downloadTimeout = 8
-        downloader.sessionConfiguration = websiteConfiguration()
+        downloader.sessionConfiguration = configuration
+        cachedFaviconDownloader = downloader
         return downloader
-    }()
+    }
+
+    private var proxyPreferenceID: [String] { [String(proxyEnabled), preferredProxyType.rawValue] }
 
     var body: some View {
         Group {
@@ -40,7 +53,7 @@ struct AppIconView: View {
                         .alternativeSources(faviconURLs.dropFirst().map {
                             .network(KF.ImageResource(downloadURL: $0, cacheKey: "website-favicon-\($0.absoluteString)"))
                         })
-                        .downloader(Self.faviconDownloader)
+                        .downloader(Self.faviconDownloader(configuration: Self.websiteConfiguration()))
                         .setProcessor(DownsamplingImageProcessor(size: CGSize(width: size * displayScale, height: size * displayScale)))
                         .resizable()
                         .placeholder { monogram }
@@ -50,6 +63,7 @@ struct AppIconView: View {
                             faviconFailed = true
                         }
                         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                        .id(proxyPreferenceID)
                 } else {
                     monogram
                 }
@@ -70,7 +84,7 @@ struct AppIconView: View {
             }
         }
         .frame(width: size, height: size)
-        .task(id: iconFailed ? homepageURL : nil) {
+        .task(id: [iconFailed ? homepageURL?.absoluteString ?? "" : ""] + proxyPreferenceID) {
             guard iconFailed, let homepageURL else { return }
             let urls = await FaviconResolver.shared.candidates(for: homepageURL, configuration: Self.websiteConfiguration())
             guard !Task.isCancelled else { return }
