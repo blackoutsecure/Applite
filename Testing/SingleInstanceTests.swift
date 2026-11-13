@@ -83,7 +83,21 @@ enum SingleInstanceTests {
         settings.showUninstall(openSettings: focusSettings)
         precondition(focusRequests == 3)
 
-        print("PASS: single-instance ownership, concurrent processes, release, abrupt exit, stale files, I/O errors, and repeated Uninstall routing")
+        settings.selection = .general
+        var updateEvents: [String] = []
+        let showUpdateSettings = {
+            precondition(settings.selection == .updates, "Select Updates before opening or focusing Settings")
+            updateEvents.append("settings")
+        }
+        let checkForUpdates = {
+            precondition(updateEvents.last == "settings", "Focus Settings before starting the update check")
+            updateEvents.append("check")
+        }
+        settings.showUpdates(openSettings: showUpdateSettings, checkForUpdates: checkForUpdates)
+        settings.showUpdates(openSettings: showUpdateSettings, checkForUpdates: checkForUpdates)
+        precondition(updateEvents == ["settings", "check", "settings", "check"])
+
+        print("PASS: single-instance ownership, concurrent processes, release, abrupt exit, stale files, I/O errors, and Uninstall/Updates routing")
     }
 
     private static func startChild(mode: String, url: URL) throws -> (process: Process, input: Pipe, output: Pipe) {

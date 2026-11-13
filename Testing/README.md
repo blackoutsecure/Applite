@@ -7,6 +7,8 @@ without launching Applite or touching its preferences, database, or Homebrew.
 Tests cover concurrent processes, ownership release, abrupt process exit, stale
 lock files, explicit I/O failures, and selecting Uninstall before opening Settings,
 including repeat requests when Uninstall is already selected.
+They also verify that the Updates pane is selected and Settings is opened or focused
+before exactly one update-check callback runs per request, including repeated requests.
 
 For a manual UI check, launch Applite, then attempt to launch another copy with the
 same bundle identifier. The existing main window should come forward without an
@@ -22,6 +24,11 @@ select and focus the same Settings window, retaining the current uninstall optio
 Repeat from another Settings tab and with Settings closed or minimized. Merely
 opening the pane must not start an uninstall; do not confirm an actual uninstall
 on a shared machine.
+
+Choose **Check for Updates...** from the app menu with Settings closed, on another
+tab, and already on Updates. Each request should select and focus **Settings > Updates**
+and start the existing Sparkle check once. While checking, the menu item should be
+disabled. Cancel or dismiss the result; do not install an update during this check.
 
 `applite_test.py` is a **guided** end-to-end test harness. It doesn't automate the
 UI — *you* perform each action in the real Applite window, and after each step the

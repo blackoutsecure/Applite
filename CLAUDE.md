@@ -35,6 +35,8 @@ Self-uninstall has one destination: Settings' Uninstall pane. `SettingsNavigatio
 owns the selected pane; the app menu and self-card select it before calling the
 native `openSettings` action, which reuses the Settings window. There is no separate
 `uninstall-self` scene.
+The app menu's update-check action uses the same navigation model to select Updates
+and focus Settings before invoking the existing updater; its busy-state gate stays intact.
 
 1. **App Launch**: `ContentView.task(id: bootstrap.attempt)` calls `caskManager.bootstrapAndLoad()`
 2. **First Run**: `HomebrewBootstrap` installs/validates brew; while `bootstrap.needsSetupOverlay` is true, `ContentView` covers the window with the non-dismissable `ComponentsInstallView` modal (`Features/Bootstrap/`). There is no separate onboarding flow — the app opens straight into the main UI

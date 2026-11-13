@@ -97,6 +97,10 @@ All self-uninstall entry points share **Settings > Uninstall**. Choosing Uninsta
 from the app menu or Applite's app card selects that pane and opens or focuses the
 existing Settings window instead of creating a separate uninstaller.
 
+The app menu's **Check for Updates...** action selects and opens or focuses
+**Settings > Updates** before starting the existing Sparkle update check.
+It remains disabled while a check is in progress.
+
 ## Built With
 
 Swift and SwiftUI, targeting macOS 14 so `@Observable` and `NavigationSplitView` are available without back-deployment shims. No Combine. The cask catalog is a local SQLite database (GRDB.swift, WAL mode) synced from the Homebrew JSON API, with FTS5 and BM25 ranking for full-catalog search. Loading is two-stage: SQLite paints the UI immediately, then `brew list --cask` and `brew outdated --cask` fill in installed and outdated state reactively, so nothing blocks on the brew CLI.

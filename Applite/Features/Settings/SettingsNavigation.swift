@@ -13,4 +13,10 @@ final class SettingsNavigation {
         selection = .uninstall
         openSettings()
     }
+
+    func showUpdates(openSettings: () -> Void, checkForUpdates: () -> Void) {
+        selection = .updates
+        openSettings()
+        checkForUpdates()
+    }
 }
