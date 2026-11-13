@@ -40,7 +40,7 @@ The shared cask/brew engine lives under `Applite/Core/`, split into focused subf
 - `CaskWarning` - Warning enum (deprecated/disabled/caveat)
 - `ExternalAppDetector` - Disk-only external detection using artifact bundle names, or display-name fallback, in the configured app directory, `/Applications`, and `~/Applications`. `refreshInstalled()` scans the entire catalog off the main actor so external totals include unbrowsed casks
 - `Preferences.detectExternallyInstalledApps` defaults to true. The Brew settings App Sources toggle clears external runtime state immediately when disabled and hides external filters; enabling it rescans locally. Both scan-result application and adoption confirmation check the preference to reject stale in-flight work
-- `Preferences.offerHomebrewManagement` defaults to true and independently controls the "Manage with Homebrew" offer. Disabling it preserves external detection/status/filter counts and shows Open on external cards instead. Both confirmation creation and its action recheck the preference
+- `Preferences.offerHomebrewManagement` defaults to false (opt-in), preserving existing saved choices. Its indented settings row is greyed out and disabled when detection is off without overwriting the saved value. Cards only offer "Manage with Homebrew" when both preferences are enabled. Disabling management preserves external detection/status/filter counts and shows Open on external cards instead. Both confirmation creation and its action recheck both preferences
 - `CaskProgressState`, `CaskLoadError` - install progress + load error types
 
 **Plain models** (`Applite/Core/Models/`)

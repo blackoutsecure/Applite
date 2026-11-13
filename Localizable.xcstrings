@@ -11324,8 +11324,12 @@
     "Manage this app with Homebrew?" : {},
     "Manage with Homebrew" : {},
     "Offer Manage with Homebrew" : {},
-    "Show \"Manage with Homebrew\" for externally installed apps. Turning this off keeps detection enabled and does not change installed apps." : {},
-    "This will reinstall the app via Homebrew so future updates can be managed here." : {}
+    "Show \"Manage with Homebrew\" for externally installed apps. Turning this off keeps detection enabled and does not change installed apps." : {
+      "extractionState" : "stale"
+    },
+    "This will reinstall the app via Homebrew so future updates can be managed here." : {},
+    "Requires external app detection." : {},
+    "Show \"Manage with Homebrew\" on external app cards. Reinstalls require confirmation." : {}
   },
   "version" : "1.1"
 }

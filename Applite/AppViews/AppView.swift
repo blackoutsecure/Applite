@@ -24,6 +24,7 @@ struct AppView: View {
     @Environment(\.openWindow) var openWindow
 
     @Environment(CaskManager.self) var caskManager
+    @AppStorage(Preferences.detectExternallyInstalledApps) private var detectExternallyInstalledApps
     @AppStorage(Preferences.offerHomebrewManagement) private var offerHomebrewManagement
 
     // Alerts
@@ -210,7 +211,7 @@ struct AppView: View {
             if cask.isInstalled {
                 OpenButton(cask: cask)
             } else if cask.isInstalledExternally {
-                if offerHomebrewManagement {
+                if detectExternallyInstalledApps && offerHomebrewManagement {
                     Button("Manage with Homebrew") {
                         caskManager.confirmAdoption(cask)
                     }

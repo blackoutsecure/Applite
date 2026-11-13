@@ -143,6 +143,11 @@ enum ExternalInstallTests {
         registry.markExternalInstallations(appURLs: [tapRecord.fullToken: helper])
         let manager = CaskManager(registry: registry)
         manager.confirmAdoption(tapVM)
+        precondition(manager.alert.current == nil, "Management must require an explicit opt-in")
+        precondition(tapVM.installationState == .externalInstalled)
+        precondition(registry.externalInstalledCount == 1)
+        defaults.setValue(true, for: Preferences.offerHomebrewManagement)
+        manager.confirmAdoption(tapVM)
         let confirmation = manager.alert.current!
         precondition(confirmation.title == "Manage this app with Homebrew?")
         precondition(confirmation.actions.first?.title == "Manage with Homebrew")
@@ -209,6 +214,26 @@ enum ExternalInstallTests {
         precondition(tapVM.installationState == .externalInstalled)
         precondition(registry.externalInstalledCount == 1)
         precondition(vm.installationState == .installed)
+        let restoredManagement = CaskManager(registry: registry)
+        restoredManagement.confirmAdoption(tapVM)
+        precondition(
+            restoredManagement.alert.current?.title == "Manage this app with Homebrew?",
+            "Re-enabling detection must respect the saved management opt-in"
+        )
+
+        defaults.setValue(false, for: Preferences.offerHomebrewManagement)
+        defaults.setValue(false, for: Preferences.detectExternallyInstalledApps)
+        manager.applyExternalAppDetectionSetting()
+        defaults.setValue(true, for: Preferences.detectExternallyInstalledApps)
+        try await loader.refreshExternalInstallations()
+        let restoredOptOut = CaskManager(registry: registry)
+        restoredOptOut.confirmAdoption(tapVM)
+        precondition(
+            restoredOptOut.alert.current == nil,
+            "Re-enabling detection must not enable an opted-out management offer"
+        )
+        precondition(tapVM.installationState == .externalInstalled)
+        precondition(registry.externalInstalledCount == 1)
         defaults.setValue("/tmp/Apps with 'quotes'", for: Preferences.appdirPath)
 
         // The real queued/streaming install path talks only to this fixture executable.

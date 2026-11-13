@@ -96,10 +96,13 @@ hide the external-app sidebar/search filters and adoption actions. Managed apps 
 unaffected, and no apps are changed or removed. Turning it back on rescans locally;
 no catalog download is required.
 
-**Offer Manage with Homebrew**, in the same section, is also enabled by default.
-Disable only this setting to keep external-app detection, status, filters, and
-counts, but show **Open** instead of offering Homebrew management on external app
-cards. Disabling it also prevents an already-open confirmation from starting a reinstall.
+**Offer Manage with Homebrew**, indented beneath detection, defaults to off when
+no preference has been saved. Enable it to offer Homebrew management on external
+app cards; otherwise, they show **Open** while detection, status, filters, and
+counts remain available. Both settings must be enabled to offer management.
+When detection is off, the management setting is greyed out and unavailable.
+Its saved choice is preserved and respected when detection is re-enabled.
+Disabling management also prevents an already-open confirmation from starting a reinstall.
 
 Apps found in `/Applications`, `~/Applications`, or your custom app directory that are
 not tracked by the selected Homebrew appear as **Installed externally**. Detection uses

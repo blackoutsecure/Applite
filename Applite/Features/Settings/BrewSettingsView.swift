@@ -186,11 +186,19 @@ struct BrewSettingsView: View {
             Toggle(isOn: $offerHomebrewManagement) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Offer Manage with Homebrew")
-                    Text("Show \"Manage with Homebrew\" for externally installed apps. Turning this off keeps detection enabled and does not change installed apps.")
+                    Text("Show \"Manage with Homebrew\" on external app cards. Reinstalls require confirmation.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if !detectExternallyInstalledApps {
+                        Text("Requires external app detection.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
+            .padding(.leading, 20)
+            .foregroundStyle(detectExternallyInstalledApps ? Color.primary : Color.secondary)
+            .tint(detectExternallyInstalledApps ? Color.accentColor : Color.gray)
             .disabled(!detectExternallyInstalledApps)
         }
     }
