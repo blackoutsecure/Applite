@@ -126,6 +126,7 @@ final class CaskManager {
     }
 
     func applyExternalAppDetectionSetting(surfacingErrorsIn errorSurface: AlertManager? = nil) {
+        dataLoader.invalidateExternalInstallations()
         guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps) else {
             registry.markExternalInstallations(appURLs: [:])
             return
@@ -145,7 +146,8 @@ final class CaskManager {
         guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps),
               UserDefaults.standard.value(for: Preferences.offerHomebrewManagement),
               cask.isInstalledExternally, !(cask.warning?.isDisabled ?? false) else { return }
-        let arguments = BrewService.installArguments(fullToken: cask.fullToken)
+        let configuration = BrewOperationConfiguration.current
+        let arguments = BrewService.installArguments(fullToken: cask.fullToken, configuration: configuration)
         let preview = (["brew"] + arguments).map { argument in
             if argument.range(of: #"^[A-Za-z0-9_./@=+-]+$"#, options: .regularExpression) != nil {
                 return argument
@@ -175,7 +177,13 @@ final class CaskManager {
                           UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps),
                           UserDefaults.standard.value(for: Preferences.offerHomebrewManagement),
                           cask.isInstalledExternally else { return }
-                    self.brewService.install(cask, arguments: arguments) {
+                    do {
+                        try configuration.validateCurrent()
+                    } catch {
+                        self.alert.show(error: error, title: "Homebrew configuration changed")
+                        return
+                    }
+                    self.brewService.install(cask, arguments: arguments, confirmedConfiguration: configuration) {
                         try await self.dataLoader.refreshInstalled()
                         guard cask.isInstalled else {
                             throw CaskAdoptionError.notManaged

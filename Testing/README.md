@@ -2,6 +2,10 @@
 
 ## Non-destructive external-install regression tests
 
+Review-race fixtures also cover an Install before initial detection, configuration
+changes before confirmation/queued execution, retained stdout/stderr after a failed
+reconciliation, and a paused scan completing after detection is disabled/re-enabled.
+
 These tests use the real app's Debug module, isolated databases, temporary app
 directories, and a temporary fake `brew`. They verify artifact decoding (including
 renamed targets), v1 database migration/FTS preservation, managed/external/missing

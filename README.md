@@ -90,6 +90,12 @@ Architecture notes are in [CLAUDE.md](CLAUDE.md).
 
 ### Externally installed apps
 
+Install rechecks the expected app bundle before running, so an unfinished detection
+scan cannot silently turn Install into Homebrew adoption. Adoption confirmation is
+bound to the selected Homebrew and installation directory; changing either requires
+a fresh confirmation, including for queued work. Detection drops superseded scans,
+and a failed post-install refresh retains the command's output alongside its error.
+
 **Settings > Brew > App Sources > Detect externally installed apps** is enabled by
 default. Turn it off to stop external-app scans, clear external status/counts, and
 hide the external-app sidebar/search filters and adoption actions. Managed apps are
