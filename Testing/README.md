@@ -27,6 +27,8 @@ Installed projection reconciliation use isolated filesystem fixtures.
 Hidden-self fixtures ensure an external Applite bundle contributes neither a row
 nor a badge. A paused reconciliation also verifies the real operation remains busy
 in the status summary until post-install ownership refresh completes.
+Manually verify self aliases are excluded from migration while any already-enqueued
+self task remains visible and dismissible in Active Tasks.
 
 Review-race fixtures also cover an Install before initial detection, configuration
 changes before confirmation/queued execution, retained stdout/stderr after a failed
@@ -37,16 +39,20 @@ path edits, and cancellation of superseded scan work. Receipt refresh tolerates
 replacement-scan cancellation but propagates parent cancellation, a changed
 Homebrew configuration, and unexpected scan cancellation.
 Batch fixtures also switch Homebrew during streamed output and during the final
-receipt query, asserting that neither stale result changes installed state.
+receipt query, asserting that neither stale result changes installed state and
+that a running Homebrew process is allowed to finish after a configuration change.
 Additional cases cover single-install profile changes, retained stale-batch output,
 blocked imports with stale receipt flags, outdated-state clearing, and empty scans
 without materializing unrelated catalog records.
+A delayed external scan cannot overwrite a newer existing catalog record.
 Legacy records with missing artifact names query the selected Homebrew before single
 and bulk installs; tests cover renamed external bundles, missing live artifacts, and
 an install with verified non-conflicting targets.
 One cask with multiple copies of the same bundle is tested for path-specific rows,
 counts, selected URLs, per-copy source filters, receipt ownership, removal on refresh,
 and blocked Homebrew actions while the target is ambiguous.
+Manually verify an eligible Install button remains usable during installed-state
+refresh, with the operation queued and checked before it starts.
 
 These tests use the real app's Debug module, isolated databases, temporary app
 directories, and a temporary fake `brew`. They verify artifact decoding (including
@@ -105,6 +111,8 @@ and missing plists, beta versions, and Unknown update status for external/protec
 apps, self-updaters, placeholders, and missing Homebrew version or status. They also check managed current and
 outdated outcomes and preserve local version information when Homebrew is unavailable.
 An omitted auto-update flag preserves a reported Homebrew outdated status.
+Reported status is shown only when the local release and any receipt build match;
+missing or mismatched local metadata remains Unknown.
 Managed-location fixtures move/rename a bundle, repeat the lookup with a stale cached
 path, verify opening resolves the moved managed bundle, select a second pinned Homebrew, and retain an explicit external/protected
 distribution. When multiple historical targets remain, they retain ownership evidence
@@ -365,7 +373,8 @@ Proxy fixtures cover a cached failure and a paused old request after route chang
 Redirected error/non-HTML responses and exact-cutoff unclosed script/style/comment
 prefixes verify the fallback origin and ignored-region boundaries.
 
-Review fixtures cover head-like text inside scripts/styles/comments, target-only
+Review fixtures cover head-like text inside scripts/styles/comments, base/link-like
+text inside quoted attributes, target-only
 base elements, numeric/named character references and decoded scheme rejection.
 The module harness also verifies downloader reuse and replacement after an
 effective proxy change without making an image network request.

@@ -662,6 +662,7 @@ final class BrewService {
             vm.protectedAppInstallation = protection
             vm.installedBundleURL = url
             vm.hasMultipleInstalledCopies = multipleCopies
+            vm.hasSelectedCopyProvenance = multipleCopies
             vm.selectedCopyProtection = selectedProtection
         }
     }
@@ -996,17 +997,16 @@ final class BrewService {
 
         var perCaskError: [String: String] = [:]
         var completeOutput = ""
+        var configurationChanged = false
 
         do {
             for try await line in Shell.stream(configuration.executable, arguments, pty: true) {
                 if Task.isCancelled { break }
                 completeOutput += line + "\n"
-                try configuration.validateCurrent()
+                if configuration != .current { configurationChanged = true }
+                guard !configurationChanged else { continue }
                 applyBatchLine(line, kind: kind, lookup: lookup, perCaskError: &perCaskError)
             }
-        } catch CaskAdoptionError.configurationChanged {
-            await failBatchForConfigurationChange(vms, output: completeOutput)
-            return
         } catch {
             // A non-zero exit is expected when any cask fails (reconcile decides per-cask outcome).
             // A user cancel also throws here — don't log that as an error.
@@ -1019,6 +1019,10 @@ final class BrewService {
             for vm in vms { vm.progressState = .idle }
             return
         }
+        if configurationChanged || configuration != .current {
+            await failBatchForConfigurationChange(vms, output: completeOutput)
+            return
+        }
 
         do {
             try await reconcileBatch(
@@ -1027,12 +1031,23 @@ final class BrewService {
         } catch is CancellationError {
             for vm in vms { vm.progressState = .idle }
         } catch {
+            guard configuration == .current else {
+                await failBatchForConfigurationChange(vms, output: completeOutput)
+                return
+            }
             for vm in vms {
-                await showFailure(
-                    for: vm, error: error, output: completeOutput + "\n" + error.localizedDescription,
-                    failureTitle: String(localized: "Couldn't refresh installed apps"),
-                    failureMessage: error.localizedDescription
-                )
+                switch vm.progressState {
+                case .success:
+                    vm.progressState = .idle
+                case .failed:
+                    break
+                default:
+                    await showFailure(
+                        for: vm, error: error, output: completeOutput + "\n" + error.localizedDescription,
+                        failureTitle: String(localized: "Couldn't refresh installed apps"),
+                        failureMessage: error.localizedDescription
+                    )
+                }
             }
         }
     }

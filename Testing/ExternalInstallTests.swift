@@ -359,6 +359,7 @@ enum ExternalInstallTests {
             try externalRecord.insert(db)
             try selfRecord.insert(db)
         }
+        _ = registry.viewModel(for: externalRecord)
         let loader = CaskDataLoader(
             dbService: CaskDatabaseService(databasePool: scanPool), registry: registry,
             intuneInventory: { .empty }, artCraftInventory: { .empty }
@@ -482,7 +483,7 @@ enum ExternalInstallTests {
         guard case .failed(let output) = tapVM.progressState else {
             preconditionFailure("Failed adoption must expose its output")
         }
-        precondition(output.contains("Error: adoption fixture stderr"))
+        precondition(output.contains("Error: adoption fixture stderr"), "Unexpected adoption output: \(output)")
         let receivedArguments = try String(contentsOf: root.appendingPathComponent("arguments"), encoding: .utf8)
         precondition(receivedArguments == arguments.joined(separator: "\n") + "\n")
         precondition(registry.externalInstalledCount == 1)
@@ -580,6 +581,10 @@ enum ExternalInstallTests {
         let latestAvailable = try brew(installed: "8.12.44", outdated: false, available: "latest")
         let selfUpdating = try brew(installed: "8.12.44", outdated: false, autoUpdates: true)
         let unknownAutoUpdates = try brew(installed: "8.12.44", outdated: false, autoUpdates: nil)
+        let buildReceipt = try brew(installed: "8.12.44,8044", outdated: false)
+        let mismatchedBuild = try brew(installed: "8.12.44,8045", outdated: false)
+        try writePlist(["CFBundleShortVersionString": "8.12.44", "CFBundleVersion": "8044"])
+        let matchingMetadata = try InstalledAppMetadata.read(at: app)
 
         precondition(InstalledAppDetails.version(
             isLocallyInstalled: true, isHomebrewManaged: false, hasOtherOwner: false, metadata: metadata, brew: current
@@ -600,40 +605,52 @@ enum ExternalInstallTests {
             isLocallyInstalled: false, isHomebrewManaged: false, hasOtherOwner: false, metadata: nil, brew: current
         ) == .notInstalled)
         precondition(InstalledAppDetails.updateStatus(
-            isLocallyInstalled: true, isHomebrewManaged: false, hasOtherOwner: false, brew: current
+            isLocallyInstalled: true, isHomebrewManaged: false, hasOtherOwner: false, metadata: metadata, brew: current
         ) == .unknown, "Homebrew cannot determine update status for an external beta")
         precondition(InstalledAppDetails.updateStatus(
-            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: true, brew: current
+            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: true, metadata: metadata, brew: current
         ) == .unknown, "A protected distribution must not inherit another receipt's status")
         precondition(InstalledAppDetails.updateStatus(
-            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, brew: missingVersion
+            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: matchingMetadata, brew: missingVersion
         ) == .unknown, "An outdated=false response without an installed version is not evidence")
         precondition(InstalledAppDetails.updateStatus(
-            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, brew: missingStatus
+            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: matchingMetadata, brew: missingStatus
         ) == .unknown)
         for info in [latestInstalled, latestAvailable, selfUpdating] {
             precondition(InstalledAppDetails.updateStatus(
-                isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, brew: info
+                isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: matchingMetadata, brew: info
             ) == .unknown, "Placeholder versions or self-updating apps cannot establish update status")
         }
         precondition(InstalledAppDetails.updateStatus(
-            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, brew: unknownAutoUpdates
+            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: matchingMetadata, brew: unknownAutoUpdates
         ) == .current, "An absent auto-update flag must preserve Homebrew's reported update status")
         precondition(InstalledAppDetails.version(
             isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: nil, brew: latestInstalled
         ) == .unknown)
         precondition(InstalledAppDetails.updateStatus(
-            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, brew: nil
+            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: matchingMetadata, brew: nil
         ) == .unknown)
         precondition(InstalledAppDetails.updateStatus(
-            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, brew: current
+            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: matchingMetadata, brew: current
         ) == .current)
         precondition(InstalledAppDetails.updateStatus(
-            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, brew: outdated
+            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: matchingMetadata, brew: outdated
         ) == .outdated)
         precondition(InstalledAppDetails.updateStatus(
-            isLocallyInstalled: false, isHomebrewManaged: false, hasOtherOwner: false, brew: nil
+            isLocallyInstalled: false, isHomebrewManaged: false, hasOtherOwner: false, metadata: nil, brew: nil
         ) == .notApplicable)
+        precondition(InstalledAppDetails.updateStatus(
+            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: metadata, brew: current
+        ) == .unknown, "A different local beta must not inherit the receipt's status")
+        precondition(InstalledAppDetails.updateStatus(
+            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: nil, brew: current
+        ) == .unknown, "Missing local metadata cannot corroborate the receipt")
+        precondition(InstalledAppDetails.updateStatus(
+            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: matchingMetadata, brew: buildReceipt
+        ) == .current, "Homebrew release/build receipts can match local release and build metadata")
+        precondition(InstalledAppDetails.updateStatus(
+            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: matchingMetadata, brew: mismatchedBuild
+        ) == .unknown, "A different local build must not inherit the receipt's status")
 
         try writePlist(["CFBundleShortVersionString": "  ", "CFBundleVersion": "2"])
         let updated = try InstalledAppMetadata.read(at: app)
@@ -2302,6 +2319,15 @@ enum ExternalInstallTests {
         }
         let stable = record("identity-shared")
         let beta = record("identity-shared@beta")
+        let recordedOnly = try ExternalAppDetector.installations(
+            catalog: [stable], managedTokens: [stable.fullToken], directories: [],
+            recordedAppURLs: [stable.fullToken: [systemApp, userApp, systemApp]]
+        )
+        precondition(recordedOnly.multipleCopyTokens.contains(stable.fullToken)
+                     && recordedOnly.bundleURLs[stable.fullToken] == systemApp.resolvingSymlinksInPath().standardizedFileURL
+                     && recordedOnly.additionalInstallations[stable.fullToken]?.map(\.url)
+                        == [userApp.resolvingSymlinksInPath().standardizedFileURL],
+                     "Recorded bundles outside scan roots must appear once per physical copy")
         let aliasDirectory = root.appendingPathComponent("Identity Alias Apps")
         try fm.createDirectory(at: aliasDirectory, withIntermediateDirectories: true)
         try fm.createSymbolicLink(at: aliasDirectory.appendingPathComponent("Shared.app"), withDestinationURL: systemApp)
@@ -2366,6 +2392,30 @@ enum ExternalInstallTests {
         precondition(appStoreRows[0].installedManagementSourceName == ProtectedAppInstallation.Source.appStore.name
                      && otherRows[0].installedManagementSourceName == String(localized: "Unknown"),
                      "Details must describe the selected copy's source rather than another copy's protection")
+        let managedMixed = try ExternalAppDetector.installations(
+            catalog: [stable], managedTokens: [stable.fullToken], directories: [system, user],
+            recordedAppURLs: [stable.fullToken: [systemApp]]
+        )
+        oneCaskRegistry.markInstalled(tokens: [stable.fullToken])
+        oneCaskRegistry.markExternalInstallations(
+            appURLs: managedMixed.externalAppURLs, appStoreAppURLs: managedMixed.appStoreAppURLs,
+            bundleURLs: managedMixed.bundleURLs, copies: managedMixed.additionalInstallations,
+            multipleCopyTokens: managedMixed.multipleCopyTokens,
+            selectedCopyProtection: managedMixed.selectedCopyProtection
+        )
+        oneCaskRegistry.clearExternalInstallations()
+        precondition(primary.installedManagementSourceName == String(localized: "Homebrew")
+                     && InstalledListOptions(source: .homebrew).apply(to: [primary]) == [primary]
+                     && InstalledListOptions(source: .appStore).apply(to: [primary]).isEmpty
+                     && primary.protectedAppInstallation?.source == .appStore,
+                     "Hiding external copies must preserve selected provenance and aggregate write protection")
+        oneCaskRegistry.updateManagedBundleURLs(
+            managedMixed.bundleURLs, multipleCopyTokens: managedMixed.multipleCopyTokens,
+            selectedCopyProtection: managedMixed.selectedCopyProtection
+        )
+        precondition(primary.installedManagementSourceName == String(localized: "Homebrew")
+                     && primary.protectedAppInstallation?.source == .appStore,
+                     "A disabled-detection refresh must retain per-copy provenance and aggregate protection")
         try fm.removeItem(at: userReceipt)
         let oneManaged = try ExternalAppDetector.installations(
             catalog: [stable], managedTokens: [stable.fullToken], directories: [system, user],
@@ -2772,6 +2822,7 @@ enum ExternalInstallTests {
         case "$1" in
           --version) echo "Homebrew fixture" ;;
           list)
+            if [ -f "$fixture_dir/fail-list" ]; then echo "fixture list failure" >&2; exit 1; fi
             if [ -f "$fixture_dir/pause-list" ]; then
               touch "$fixture_dir/list-started"
               while [ -f "$fixture_dir/pause-list" ]; do sleep 0.01; done
@@ -2782,6 +2833,7 @@ enum ExternalInstallTests {
             bundle="External.app"
             if [ "$token" = "review-missing" ]; then bundle="Missing.app"; fi
             if [ "$token" = "legacy-safe" ]; then bundle="Safe.app"; fi
+            case "$token" in mixed-*) bundle="$token.app" ;; esac
             if [ -f "$fixture_dir/missing-artifacts" ]; then
               printf '{"casks":[{"token":"%s","full_token":"%s","tap":"homebrew/cask","homepage":"https://example.test/","url":"https://example.test/app.dmg","deprecated":false,"disabled":false}]}' "$token" "$4"
               exit 0
@@ -2793,12 +2845,27 @@ enum ExternalInstallTests {
               touch "$fixture_dir/stream-started"
               while [ -f "$fixture_dir/pause-stream" ]; do sleep 0.01; done
             fi
+            if [ -f "$fixture_dir/track-stream-finish" ]; then
+              echo "stream continued"
+              sleep 0.2
+              touch "$fixture_dir/stream-finished"
+            fi
+            if [ -f "$fixture_dir/mixed-reconcile" ]; then echo "Starting fixture batch"; fi
             for token in "$@"; do
               case "$token" in install|--cask|--force|--appdir=*) continue ;; esac
+              if [ -f "$fixture_dir/mixed-reconcile" ]; then
+                case "$token" in
+                  mixed-success) echo "$token was successfully installed!" ;;
+                  mixed-error) echo "Error: $token: fixture individual failure" ;;
+                  mixed-unresolved) echo "fixture unresolved output" ;;
+                esac
+                continue
+              fi
               printf '%s\\n' "$token" >> "$fixture_dir/receipts"
               if [ ! -f "$fixture_dir/no-markers" ]; then echo "$token was successfully installed!"; fi
               if [ "$token" = "review-missing" ]; then mkdir -p "$fixture_dir/Apps/Missing.app"; fi
             done
+            if [ -f "$fixture_dir/mixed-reconcile" ]; then touch "$fixture_dir/fail-list"; fi
             if [ -f "$fixture_dir/pause-reconciliation" ]; then touch "$fixture_dir/pause-list"; fi ;;
           *) exit 2 ;;
         esac
@@ -2836,8 +2903,51 @@ enum ExternalInstallTests {
         let service = BrewService(notify: { _, _, _ in }, intuneInventory: { .empty }, artCraftInventory: { .empty })
         let manager = CaskManager(dataLoader: loader, registry: registry, brewService: service)
         let arguments = prefix.appendingPathComponent("arguments")
+        let resolved = CaskViewModel(record: record("mixed-success", bundle: "Mixed-success.app"))
+        let failed = CaskViewModel(record: record("mixed-error", bundle: "Mixed-error.app"))
+        let unresolved = CaskViewModel(record: record("mixed-unresolved", bundle: "Mixed-unresolved.app"))
+        try Data().write(to: prefix.appendingPathComponent("mixed-reconcile"))
+        service.installAll([resolved, failed, unresolved])
+        _ = try await service.runSerialized { true }
+        precondition(resolved.isInstalled && !resolved.progressState.isFailed,
+                     "A successful marker must survive a failed reconciliation query: \(resolved.progressState)")
+        guard case .failed(let failedOutput) = failed.progressState,
+              case .failed(let unresolvedOutput) = unresolved.progressState else {
+            preconditionFailure("Failed and unresolved batch entries must retain failure output")
+        }
+        precondition(failedOutput.contains("fixture individual failure")
+                     && unresolvedOutput.contains("fixture unresolved output")
+                     && unresolvedOutput.contains("fixture list failure"),
+                     "Preserve the per-cask error and append the query error to unresolved command output")
+        try fm.removeItem(at: prefix.appendingPathComponent("mixed-reconcile"))
+        try fm.removeItem(at: prefix.appendingPathComponent("fail-list"))
+        try fm.removeItem(at: arguments)
         try await loader.refreshExternalInstallations { _, _, _ in [:] }
         precondition(registry.count == 2, "Empty scans must not materialize the entire catalog")
+        let scanGate = ScanGate()
+        let scannedToken = externalRecord.fullToken
+        let delayedScan = Task {
+            try await loader.refreshExternalInstallations { _, _, _ in
+                await scanGate.wait()
+                return [scannedToken: app]
+            }
+        }
+        let catalogScanDeadline = Date().addingTimeInterval(5)
+        while !(await scanGate.isWaiting) && Date() < catalogScanDeadline { await Task.yield() }
+        let scanWaiting = await scanGate.isWaiting
+        precondition(scanWaiting)
+        let updatedRecord = CaskRecord(
+            token: externalRecord.token, fullToken: externalRecord.fullToken, tap: externalRecord.tap,
+            name: "Newer Catalog Name", descriptionText: "", homepageURL: nil, pkgInstaller: false,
+            warningType: nil, warningDate: nil, warningReason: nil, downloadsIn365days: 0,
+            appBundleNames: ["External.app"]
+        )
+        _ = registry.viewModel(for: updatedRecord)
+        await scanGate.release()
+        try await delayedScan.value
+        precondition(vm.name == "Newer Catalog Name",
+                     "A slow external scan must not overwrite newer live catalog data")
+        _ = registry.viewModel(for: externalRecord)
         for enabled in [false, true] {
             defaults.setValue(enabled, for: Preferences.offerHomebrewManagement)
             defaults.setValue(enabled, for: Preferences.detectExternallyInstalledApps)
@@ -2993,6 +3103,7 @@ enum ExternalInstallTests {
             registry.markInstalled(tokens: [])
             let flag = prefix.appendingPathComponent(mode == "stream" ? "pause-stream" : "pause-reconciliation")
             try Data().write(to: flag)
+            if mode == "stream" { try Data().write(to: prefix.appendingPathComponent("track-stream-finish")) }
             if mode == "reconciliation" { try Data().write(to: prefix.appendingPathComponent("no-markers")) }
             service.installAll([missing])
             let started = prefix.appendingPathComponent(mode == "stream" ? "stream-started" : "list-started")
@@ -3007,8 +3118,11 @@ enum ExternalInstallTests {
             precondition(!missing.isInstalled && missing.progressState.isFailed,
                          "Obsolete batch \(mode) results must not update receipt state after a Homebrew switch")
             if mode == "stream", case .failed(let output) = missing.progressState {
+                precondition(fm.fileExists(atPath: prefix.appendingPathComponent("stream-finished").path),
+                             "Changing configuration must not terminate an in-flight Homebrew process")
                 precondition(output.contains("successfully installed"),
                              "Stale streamed results must retain command output")
+                try fm.removeItem(at: prefix.appendingPathComponent("track-stream-finish"))
             }
             defaults.setValue(brew.path, for: Preferences.customUserBrewPath)
             if fm.fileExists(atPath: flag.path) { try fm.removeItem(at: flag) }

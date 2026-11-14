@@ -239,12 +239,15 @@ final class CaskDataLoader {
               configuration == .current else { return }
         // A Settings toggle may have changed while the off-main scan was running.
         guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps) == detectionEnabled else { return }
-        _ = registry.viewModels(for: catalog.filter {
+        registry.materializeMissingViewModels(for: catalog.filter {
             result.bundleURLs[$0.fullToken] != nil || result.externalAppURLs[$0.fullToken] != nil
                 || result.additionalInstallations[$0.fullToken] != nil
         })
         if !detectionEnabled {
-            registry.updateManagedBundleURLs(result.bundleURLs)
+            registry.updateManagedBundleURLs(
+                result.bundleURLs, multipleCopyTokens: result.multipleCopyTokens,
+                selectedCopyProtection: result.selectedCopyProtection
+            )
             return
         }
         registry.markExternalInstallations(
