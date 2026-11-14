@@ -111,6 +111,10 @@ final class CaskDataLoader {
         return registry.viewModels(for: records.filter { !$0.isApplite })
     }
 
+    func searchInstalledTokens(query: String) async throws -> [CaskId] {
+        try await dbService.searchFullTokens(query: query)
+    }
+
     /// Resolves cask tokens to view models via the DB, creating any that aren't already live.
     /// Unlike `registry.existingViewModels`, this finds casks the user has never browsed — needed
     /// so an imported app list can install anything in the catalog. Unknown tokens are dropped.
@@ -153,6 +157,7 @@ final class CaskDataLoader {
             try Task.checkCancellation()
             try configuration.validateCurrent()
             guard generation == installedRefreshGeneration else { throw CancellationError() }
+            guard externalScanGeneration == scanGeneration else { return }
             guard let onOwnershipScanFailure else { throw error }
             onOwnershipScanFailure(error)
         }
@@ -172,6 +177,10 @@ final class CaskDataLoader {
         receiptConfiguration = nil
         receiptTokens = []
         invalidateExternalInstallations()
+    }
+
+    func hasReceiptSnapshot(for configuration: BrewOperationConfiguration) -> Bool {
+        receiptConfiguration?.matchesSettings(of: configuration) == true
     }
 
     func refreshExternalInstallations(

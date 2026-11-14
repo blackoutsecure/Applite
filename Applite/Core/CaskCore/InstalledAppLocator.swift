@@ -94,10 +94,15 @@ enum InstalledAppLocator {
             let versionValues = try version.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard versionValues.isDirectory == true, versionValues.isSymbolicLink != true else { continue }
             let metadataVersion = metadata.appendingPathComponent(version.lastPathComponent)
-            let timestamps = try fm.contentsOfDirectory(
-                at: metadataVersion, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-                options: [.skipsHiddenFiles]
-            ).sorted { $0.lastPathComponent > $1.lastPathComponent }
+            let timestamps: [URL]
+            do {
+                timestamps = try fm.contentsOfDirectory(
+                    at: metadataVersion, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                    options: [.skipsHiddenFiles]
+                ).sorted { $0.lastPathComponent > $1.lastPathComponent }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+                timestamps = []
+            }
             var installed: RecordedCask?
             var receiptOnly = false
             var rubyWithoutReceipt = false
@@ -131,16 +136,17 @@ enum InstalledAppLocator {
                     continue
                 }
             }
-            guard let installed, let artifacts = installed.artifacts ?? receipt?.uninstall_artifacts else {
+            guard let artifacts = installed?.artifacts ?? receipt?.uninstall_artifacts else {
                 if rubyWithoutReceipt && !requireRecordedOwnership {
                     logger.warning("Cannot verify recorded ownership for Ruby-only cask \(token, privacy: .public)")
                     continue
                 }
                 throw CaskAdoptionError.installationTargetsUnavailable
             }
+            if installed == nil { receiptOnly = true }
             parsedVersion = true
             var staged = version
-            if let onlyPath = installed.url_specs?.only_path {
+            if let onlyPath = installed?.url_specs?.only_path {
                 guard isSafeRelativePath(onlyPath) else { throw CaskAdoptionError.installationTargetsUnavailable }
                 staged.appendPathComponent(onlyPath)
             }

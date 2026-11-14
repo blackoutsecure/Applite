@@ -103,6 +103,7 @@ final class BrewService {
         reconcile: (@MainActor () async throws -> Void)? = nil
     ) -> Task<Void, Never> {
         let configuration = confirmedConfiguration ?? .current
+        let confirmedAppURL = confirmedConfiguration == nil ? nil : vm.externalAppURL
         return runTask(for: vm, configuration: configuration) { configuration, appBundleNames in
             Self.logger.info("Cask \"\(vm.token)\" installation started")
 
@@ -117,6 +118,13 @@ final class BrewService {
                 try Task.checkCancellation()
                 if preflight.managedConflicts.contains(vm.fullToken) {
                     throw CaskAdoptionError.managedByAnotherCask
+                }
+                if confirmedConfiguration != nil {
+                    guard let confirmedAppURL, let detectedURL = preflight.external[vm.fullToken],
+                          confirmedAppURL.resolvingSymlinksInPath().standardizedFileURL
+                            == detectedURL.resolvingSymlinksInPath().standardizedFileURL else {
+                        throw CaskAdoptionError.confirmationExpired
+                    }
                 }
                 if let appURL = preflight.external[vm.fullToken] {
                     guard confirmedConfiguration != nil else {
@@ -1088,6 +1096,7 @@ final class BrewService {
                 await failBatchForConfigurationChange(vms, output: completeOutput)
                 return
             }
+            var unresolved: [CaskViewModel] = []
             for vm in vms {
                 switch vm.progressState {
                 case .success:
@@ -1095,12 +1104,14 @@ final class BrewService {
                 case .failed:
                     break
                 default:
-                    await showFailure(
-                        for: vm, error: error, output: completeOutput + "\n" + error.localizedDescription,
-                        failureTitle: String(localized: "Couldn't refresh installed apps"),
-                        failureMessage: error.localizedDescription
-                    )
+                    vm.progressState = .failed(output: completeOutput + "\n" + error.localizedDescription)
+                    unresolved.append(vm)
                 }
+            }
+            if !unresolved.isEmpty {
+                let names = unresolved.map(\.name).joined(separator: ", ")
+                Self.logger.error("Batch reconciliation failed for \(names): \(error.localizedDescription)")
+                await notify(String(localized: "Couldn't refresh installed apps"), names, .failure)
             }
         }
     }

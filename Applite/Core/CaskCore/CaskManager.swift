@@ -45,6 +45,8 @@ final class CaskManager {
     private var installedStateResolutionCount = 0
     private var requiresReceiptRefresh = false
     private var homebrewConfigurationGeneration = 0
+    private var detectionSettingGeneration = 0
+    private var receiptRefreshPending = false
     var isResolvingInstalledState: Bool { installedStateResolutionCount > 0 }
 
     /// True while a manual catalog refresh is running (toolbar action).
@@ -158,6 +160,7 @@ final class CaskManager {
         invalidateAdoptionConsent()
         selectedAppDetails = nil
         detectionSettingTask?.cancel()
+        detectionSettingGeneration &+= 1
         brewConfigurationTask?.cancel()
         homebrewConfigurationGeneration &+= 1
         requiresReceiptRefresh = true
@@ -246,19 +249,79 @@ final class CaskManager {
         debounce: Bool = false, surfacingErrorsIn errorSurface: AlertManager? = nil
     ) {
         invalidateAdoptionConsent()
+        detectionSettingGeneration &+= 1
         detectionSettingTask?.cancel()
         dataLoader.invalidateExternalInstallations()
-        guard UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps) else {
+        let configuration = BrewOperationConfiguration.current
+        let detectionEnabled = UserDefaults.standard.value(for: Preferences.detectExternallyInstalledApps)
+        let hasReceipts = dataLoader.hasReceiptSnapshot(for: configuration)
+        let needsReceipts = detectionEnabled || !hasReceipts || receiptRefreshPending
+        if !detectionEnabled {
             registry.clearExternalInstallations()
-            return
         }
+        guard detectionEnabled || (needsReceipts && (debounce || receiptRefreshPending)) else { return }
+        if !hasReceipts {
+            dataLoader.invalidateInstalledReceipts()
+            registry.markInstalled(tokens: [])
+            registry.markOutdated(tokens: [])
+            outdatedRefreshFailed = true
+        }
+        if needsReceipts {
+            receiptRefreshPending = true
+            installedStateResolutionCount += 1
+            outdatedRefreshCount += 1
+        }
+        let generation = detectionSettingGeneration
+        let homebrewGeneration = homebrewConfigurationGeneration
         let surface = errorSurface ?? alert
         detectionSettingTask = Task {
+            defer {
+                if needsReceipts {
+                    installedStateResolutionCount -= 1
+                    outdatedRefreshCount -= 1
+                }
+            }
             do {
                 if debounce { try await Task.sleep(for: .milliseconds(300)) }
                 try Task.checkCancellation()
-                try await dataLoader.refreshExternalInstallations()
+                try configuration.validateCurrent()
+                if needsReceipts {
+                    guard await BrewPaths.isBrewPathValid(at: configuration.executable) else {
+                        Self.logger.warning("Cannot refresh receipts: selected Homebrew path is invalid")
+                        return
+                    }
+                    try await brewService.runSerialized {
+                        guard generation == self.detectionSettingGeneration,
+                              homebrewGeneration == self.homebrewConfigurationGeneration else { throw CancellationError() }
+                        try configuration.validateCurrent()
+                        try await self.dataLoader.refreshInstalled(configuration: configuration, onOwnershipScanFailure: { error in
+                            Self.logger.error("App ownership scan failed: \(error.localizedDescription)")
+                            surface.show(error: error, title: "Couldn't scan app management sources")
+                        })
+                        do {
+                            try await self.dataLoader.refreshOutdated(configuration: configuration)
+                            self.outdatedRefreshFailed = false
+                        } catch is CancellationError {
+                            throw CancellationError()
+                        } catch CaskAdoptionError.configurationChanged {
+                            throw CaskAdoptionError.configurationChanged
+                        } catch {
+                            self.outdatedRefreshFailed = true
+                            Self.logger.error("Outdated refresh failed: \(error.localizedDescription)")
+                        }
+                        try Task.checkCancellation()
+                        try configuration.validateCurrent()
+                        guard generation == self.detectionSettingGeneration,
+                              homebrewGeneration == self.homebrewConfigurationGeneration else { throw CancellationError() }
+                        self.receiptRefreshPending = false
+                        self.requiresReceiptRefresh = false
+                    }
+                } else {
+                    try await dataLoader.refreshExternalInstallations(configuration: configuration)
+                }
             } catch is CancellationError {
+                return
+            } catch CaskAdoptionError.configurationChanged {
                 return
             } catch {
                 Self.logger.error("External app detection failed: \(error.localizedDescription)")
@@ -361,7 +424,10 @@ final class CaskManager {
                         cask, arguments: arguments, confirmedConfiguration: configuration,
                         adoptionConsent: BrewAdoptionConsent(validate: validateConsent)
                     ) {
-                        try await self.dataLoader.refreshInstalled(configuration: configuration)
+                        try await self.dataLoader.refreshInstalled(configuration: configuration, onOwnershipScanFailure: { error in
+                            Self.logger.error("App ownership scan failed: \(error.localizedDescription)")
+                            self.alert.show(error: error, title: "Couldn't scan app management sources")
+                        })
                         guard cask.isInstalled else {
                             throw CaskAdoptionError.notManaged
                         }
@@ -421,6 +487,10 @@ final class CaskManager {
 
     func search(query: String, installedOnly: Bool = false) async throws -> [CaskViewModel] {
         try await dataLoader.search(query: query, installedOnly: installedOnly)
+    }
+
+    func searchInstalledTokens(query: String) async throws -> [CaskId] {
+        try await dataLoader.searchInstalledTokens(query: query)
     }
     
     // MARK: - Data Loading

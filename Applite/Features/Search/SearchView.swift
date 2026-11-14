@@ -17,6 +17,7 @@ struct SearchView: View {
     @Environment(CaskManager.self) private var caskManager
 
     @State private var results: [CaskViewModel] = []
+    @State private var installedTokens: [CaskId] = []
     @State private var isSearching = false
     @State private var installedOnly = false
 
@@ -70,12 +71,23 @@ struct SearchView: View {
             defer { isSearching = false }
 
             do {
-                results = try await caskManager.search(query: query, installedOnly: installedOnly)
+                if installedOnly {
+                    let tokens = try await caskManager.searchInstalledTokens(query: query)
+                    try Task.checkCancellation()
+                    installedTokens = tokens
+                    results = []
+                } else {
+                    let matches = try await caskManager.search(query: query)
+                    try Task.checkCancellation()
+                    results = matches
+                    installedTokens = []
+                }
             } catch is CancellationError {
                 return
             } catch {
                 Self.logger.error("Search failed: \(error.localizedDescription)")
                 results = []
+                installedTokens = []
             }
         }
     }
@@ -84,7 +96,7 @@ struct SearchView: View {
         var filtered = results
         if installedOnly {
             let installed = Dictionary(grouping: caskManager.locallyInstalledViewModels, by: \.fullToken)
-            filtered = filtered.flatMap { installed[$0.fullToken] ?? [] }
+            filtered = installedTokens.flatMap { installed[$0] ?? [] }
         }
         if hideUnpopularApps {
             filtered.removeAll { $0.downloadsIn365days <= 500 }

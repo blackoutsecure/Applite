@@ -413,6 +413,13 @@ enum ExternalInstallTests {
             dbService: CaskDatabaseService(databasePool: scanPool), registry: registry,
             intuneInventory: { .empty }, artCraftInventory: { .empty }
         )
+        let searchRegistry = CaskViewModelRegistry()
+        let searchLoader = CaskDataLoader(
+            dbService: CaskDatabaseService(databasePool: scanPool), registry: searchRegistry
+        )
+        let matchingTokens = try await searchLoader.searchInstalledTokens(query: "sample")
+        precondition(matchingTokens.contains(externalRecord.fullToken) && searchRegistry.count == 0,
+                     "Installed-only search must not materialize unrelated catalog models")
         let scanBrew = root.appendingPathComponent("Scan Homebrew/bin/brew")
         let scanSource = root.appendingPathComponent("Scan Homebrew/Caskroom/sample/1/Managed.app")
         let scanManagedApp = systemApps.appendingPathComponent("Managed Sample.app")
@@ -871,6 +878,12 @@ enum ExternalInstallTests {
         )
         precondition(rubyTargets == [otherApp.resolvingSymlinksInPath().standardizedFileURL],
                      "Ruby-only saved casks must use recorded receipt artifacts without evaluating Ruby")
+        try fm.removeItem(at: rubyCasks.appendingPathComponent("ruby-receipt.rb"))
+        let receiptOnlyTargets = try InstalledAppLocator.recordedAppURLs(
+            token: "ruby-receipt", caskroom: caskroomA, requireRecordedOwnership: true
+        )
+        precondition(receiptOnlyTargets == rubyTargets, "Receipt artifacts must work without saved cask metadata")
+        try Data("cask fixture".utf8).write(to: rubyCasks.appendingPathComponent("ruby-receipt.rb"))
         try fm.removeItem(at: rubyRoom.appendingPathComponent(".metadata/INSTALL_RECEIPT.json"))
         let legacyLaunch = try InstalledAppLocator.launchURL(
             token: "ruby-receipt", displayName: "Ruby Receipt", preferredURL: nil,
@@ -1773,7 +1786,9 @@ enum ExternalInstallTests {
         precondition(vm.homebrewManagementBlockReason == nil && disabled.homebrewManagementBlockReason != nil)
         var supported = info(vm)
         supported["deprecated"] = true
+        supported["artifacts"] = [["app": ["Compatibility Fixture.app"]]]
         try setInfo([supported])
+        vm.externalAppURL = app
         await service.install(vm, confirmedConfiguration: .current).value
         precondition(vm.isInstalled && !vm.progressState.isFailed && vm.homebrewManagementBlockReason == nil)
         try fm.removeItem(at: override)
@@ -2293,6 +2308,7 @@ enum ExternalInstallTests {
         adoption.markExternalInstallations(appURLs: [stable.fullToken: shared], bundleURLs: scan.bundleURLs)
         let service = BrewService(notify: { _, _, _ in }, intuneInventory: { .empty }, artCraftInventory: { .empty })
         let beforeInstall = managed.metadataRevision
+        managed.externalAppURL = shared
         await service.install(managed, confirmedConfiguration: .current).value
         precondition(managed.isInstalled && !managed.progressState.isFailed && external.isInstalledExternally)
         precondition(managed.metadataRevision == beforeInstall + 1)
@@ -2618,6 +2634,12 @@ enum ExternalInstallTests {
         precondition(sibling.progressState.isFailed && !fm.fileExists(atPath: arguments.path),
                      "Bulk installation must block another cask's target")
         defaults.setValue(externalDirectory.path, for: Preferences.appdirPath)
+        let previouslySelected = prefix.appendingPathComponent("Previously Selected/Shared.app")
+        try fm.createDirectory(at: previouslySelected, withIntermediateDirectories: true)
+        sibling.externalAppURL = previouslySelected
+        await service.install(sibling, confirmedConfiguration: .current).value
+        precondition(sibling.progressState.isFailed && !fm.fileExists(atPath: arguments.path),
+                     "A different preflight copy must require new consent")
         sibling.externalAppURL = externalApp
         await service.install(sibling, confirmedConfiguration: .current).value
         precondition(fm.fileExists(atPath: arguments.path), "A distinct target remains eligible for adoption")
@@ -3217,7 +3239,7 @@ enum ExternalInstallTests {
                 artCraftInventory: { .empty }
             )
             let vm = CaskViewModel(record: record)
-            vm.externalAppURL = oldApp
+            vm.externalAppURL = newApp
             await service.install(vm, confirmedConfiguration: .current).value
             precondition(calls.withLock { $0 } >= 3 && vm.progressState.isFailed
                          && !fm.fileExists(atPath: arguments.path),
@@ -3635,6 +3657,7 @@ enum ExternalInstallTests {
         defaults.setValue(brew.path, for: Preferences.customUserBrewPath)
 
         var resumeReconciliation: CheckedContinuation<Void, Never>?
+        vm.externalAppURL = app
         let reconcileTask = service.install(vm, confirmedConfiguration: .current) {
             await withCheckedContinuation { resumeReconciliation = $0 }
             registry.markInstalled(tokens: [vm.fullToken])
@@ -3655,6 +3678,9 @@ enum ExternalInstallTests {
         resumeReconciliation?.resume()
         await reconcileTask.value
 
+        if fm.fileExists(atPath: prefix.appendingPathComponent("receipts").path) {
+            try fm.removeItem(at: prefix.appendingPathComponent("receipts"))
+        }
         loader.invalidateInstalledReceipts()
         registry.markInstalled(tokens: [])
         registry.markExternalInstallations(appURLs: [:])
