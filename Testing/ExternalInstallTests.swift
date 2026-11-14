@@ -417,6 +417,9 @@ enum ExternalInstallTests {
         let scanSource = root.appendingPathComponent("Scan Homebrew/Caskroom/sample/1/Managed.app")
         let scanManagedApp = systemApps.appendingPathComponent("Managed Sample.app")
         try fm.createDirectory(at: scanBrew.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "#!/bin/sh\nif [ \"$1\" = --caskroom ]; then printf '%s\\n' \"$(dirname \"$(dirname \"$0\")\")/Caskroom\"; else exit 2; fi\n"
+            .write(to: scanBrew, atomically: true, encoding: .utf8)
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scanBrew.path)
         try fm.createDirectory(at: scanSource.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.createDirectory(at: scanManagedApp, withIntermediateDirectories: true)
         try fm.createSymbolicLink(at: scanSource, withDestinationURL: scanManagedApp)
@@ -466,6 +469,7 @@ enum ExternalInstallTests {
         fixture_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
         case "$1" in
           --version) echo "Homebrew fixture" ;;
+          --caskroom) echo "$fixture_dir/Caskroom" ;;
           info)
             if [ -f "$fixture_dir/info-wait" ] &&
                { [ ! -f "$fixture_dir/info-wait-token" ] || [ "$(cat "$fixture_dir/info-wait-token")" = "$4" ]; }; then
@@ -744,13 +748,17 @@ enum ExternalInstallTests {
         let fm = FileManager.default
         let apps = root.appendingPathComponent("Metadata recovery apps")
         let token = "metadata-fixture"
+        let caskroomA = root.appendingPathComponent("Custom Caskroom A")
+        let caskroomB = root.appendingPathComponent("Custom Caskroom B")
         let configurationA = BrewOperationConfiguration(
             executable: root.appendingPathComponent("Metadata Homebrew A/bin/brew"),
-            appdirArguments: [], applicationDirectories: [apps]
+            appdirArguments: [], applicationDirectories: [apps],
+            caskroom: caskroomA
         )
         let configurationB = BrewOperationConfiguration(
             executable: root.appendingPathComponent("Metadata Homebrew B/bin/brew"),
-            appdirArguments: [], applicationDirectories: [apps]
+            appdirArguments: [], applicationDirectories: [apps],
+            caskroom: caskroomB
         )
         func writeApp(_ url: URL, version: String) throws {
             let contents = url.appendingPathComponent("Contents")
@@ -761,8 +769,8 @@ enum ExternalInstallTests {
             ).write(to: contents.appendingPathComponent("Info.plist"))
         }
         func record(_ app: URL, version: String, configuration: BrewOperationConfiguration) throws -> URL {
-            let directory = configuration.executable.deletingLastPathComponent().deletingLastPathComponent()
-                .appendingPathComponent("Caskroom/\(token)/\(version)")
+            guard let caskroom = configuration.caskroom else { throw CocoaError(.fileReadNoSuchFile) }
+            let directory = caskroom.appendingPathComponent("\(token)/\(version)")
             try fm.createDirectory(at: directory, withIntermediateDirectories: true)
             try writeRecordedArtifacts(caskroom: directory.deletingLastPathComponent(), token: token,
                                        version: version, source: app.lastPathComponent)
@@ -791,7 +799,7 @@ enum ExternalInstallTests {
         let unrelatedLink = oldLink.deletingLastPathComponent().appendingPathComponent("Payload/Unrelated.app")
         try fm.createDirectory(at: unrelatedLink.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.createSymbolicLink(at: unrelatedLink, withDestinationURL: unrelated)
-        let initialTargets = try InstalledAppLocator.recordedAppURLs(token: token, executable: configurationA.executable)
+        let initialTargets = try InstalledAppLocator.recordedAppURLs(token: token, caskroom: caskroomA)
         precondition(initialTargets == [oldApp.resolvingSymlinksInPath().standardizedFileURL],
                      "Unrecorded payload apps must not be treated as managed artifacts")
         try fm.moveItem(at: oldApp, to: newApp)
@@ -812,7 +820,7 @@ enum ExternalInstallTests {
         }
         try writeApp(oldApp, version: "1.0")
         let historicalLink = try record(oldApp, version: "0.1", configuration: configurationA)
-        let recorded = try InstalledAppLocator.recordedAppURLs(token: token, executable: configurationA.executable)
+        let recorded = try InstalledAppLocator.recordedAppURLs(token: token, caskroom: caskroomA)
         precondition(recorded.count == 2, "Ownership checks must retain historical live targets")
         for _ in 0..<2 {
             let selected = try resolve(newApp, configuration: configurationA)
@@ -829,8 +837,7 @@ enum ExternalInstallTests {
         precondition(selectedB.path == otherApp.path && metadataB.version == "3.0",
                      "A different pinned Homebrew must not reuse an existing bundle from the previous profile")
         let receiptToken = "metadata-receipt"
-        let receiptCaskroom = configurationA.executable.deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Caskroom/\(receiptToken)")
+        let receiptCaskroom = caskroomA.appendingPathComponent(receiptToken)
         let staged = receiptCaskroom.appendingPathComponent("1.0/Payload")
         try fm.createDirectory(at: staged, withIntermediateDirectories: true)
         try fm.createSymbolicLink(at: staged.appendingPathComponent("Source.app"), withDestinationURL: otherApp)
@@ -840,13 +847,13 @@ enum ExternalInstallTests {
             .write(to: receiptMetadata.appendingPathComponent("\(receiptToken).json"))
         try JSONSerialization.data(withJSONObject: ["uninstall_artifacts": [["app": ["Source.app"]]]])
             .write(to: receiptCaskroom.appendingPathComponent(".metadata/INSTALL_RECEIPT.json"))
-        let receiptTargets = try InstalledAppLocator.recordedAppURLs(token: receiptToken, executable: configurationA.executable)
+        let receiptTargets = try InstalledAppLocator.recordedAppURLs(token: receiptToken, caskroom: caskroomA)
         precondition(receiptTargets == [otherApp.resolvingSymlinksInPath().standardizedFileURL],
                      "Receipt artifacts and recorded only_path must identify the staged source")
         try JSONSerialization.data(withJSONObject: ["url_specs": ["only_path": "../outside"]])
             .write(to: receiptMetadata.appendingPathComponent("\(receiptToken).json"))
         do {
-            _ = try InstalledAppLocator.recordedAppURLs(token: receiptToken, executable: configurationA.executable)
+            _ = try InstalledAppLocator.recordedAppURLs(token: receiptToken, caskroom: caskroomA)
             preconditionFailure("An unsafe recorded source path must fail closed")
         } catch CaskAdoptionError.installationTargetsUnavailable { }
         let rubyRoom = receiptCaskroom.deletingLastPathComponent().appendingPathComponent("ruby-receipt")
@@ -860,13 +867,13 @@ enum ExternalInstallTests {
         let rubyLink = rubyStage.appendingPathComponent("Source.app")
         try fm.createSymbolicLink(at: rubyLink, withDestinationURL: otherApp)
         let rubyTargets = try InstalledAppLocator.recordedAppURLs(
-            token: "ruby-receipt", executable: configurationA.executable, requireRecordedOwnership: true
+            token: "ruby-receipt", caskroom: caskroomA, requireRecordedOwnership: true
         )
         precondition(rubyTargets == [otherApp.resolvingSymlinksInPath().standardizedFileURL],
                      "Ruby-only saved casks must use recorded receipt artifacts without evaluating Ruby")
         try fm.removeItem(at: rubyLink)
         do {
-            _ = try InstalledAppLocator.recordedAppURLs(token: "ruby-receipt", executable: configurationA.executable)
+            _ = try InstalledAppLocator.recordedAppURLs(token: "ruby-receipt", caskroom: caskroomA)
             preconditionFailure("A Ruby receipt without a verifiable staged link must fail closed")
         } catch CaskAdoptionError.installationTargetsUnavailable { }
         let launchB = try InstalledAppLocator.launchURL(
@@ -878,10 +885,17 @@ enum ExternalInstallTests {
 
         let externalApp = apps.appendingPathComponent("Protected Distribution.app")
         try writeApp(externalApp, version: "7.0")
-        let external = try resolve(externalApp, configuration: configurationA, managed: false)
+        let unpinned = BrewOperationConfiguration(
+            executable: configurationA.executable, appdirArguments: [], applicationDirectories: [apps], caskroom: nil
+        )
+        let external = try resolve(externalApp, configuration: unpinned, managed: false)
         let externalMetadata = try InstalledAppMetadata.read(at: external)
         precondition(external.path == externalApp.path && externalMetadata.version == "7.0",
                      "An explicit external/protected selection must not be replaced by a Homebrew distribution")
+        do {
+            _ = try resolve(newApp, configuration: unpinned)
+            preconditionFailure("Managed metadata must require a pinned Caskroom")
+        } catch CaskAdoptionError.installationTargetsUnavailable { }
         for (app, managed) in [(newApp, true), (externalApp, false)] {
             try Data("invalid plist".utf8).write(to: app.appendingPathComponent("Contents/Info.plist"))
             let resolved = try resolve(app, configuration: configurationA, managed: managed)
@@ -1652,7 +1666,7 @@ enum ExternalInstallTests {
             guard case .failed(let reason) = vm.progressState else {
                 preconditionFailure("Missing/formula-only or mismatched casks must not be installed")
             }
-            precondition(reason.contains(CaskAdoptionError.homebrewUnavailable.localizedDescription))
+            precondition(reason.contains(CaskAdoptionError.homebrewUnavailable.localizedDescription), "Unexpected failure: \(reason)")
         }
         var wrongTap = info(vm)
         wrongTap["full_token"] = "other/tap/\(vm.token)"
@@ -2198,7 +2212,9 @@ enum ExternalInstallTests {
         let loop = recordedLink.deletingLastPathComponent().appendingPathComponent("Loop")
         try fm.createSymbolicLink(at: loop, withDestinationURL: recordedLink.deletingLastPathComponent())
         defaults.setValue(recordedBrew.path, for: Preferences.customUserBrewPath)
-        let targets = try InstalledAppLocator.recordedAppURLs(token: "review-recorded", executable: recordedBrew)
+        let targets = try InstalledAppLocator.recordedAppURLs(
+            token: "review-recorded", caskroom: recordedBrew.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Caskroom")
+        )
         precondition(targets == [oldApp.resolvingSymlinksInPath().standardizedFileURL])
         for source in [ProtectedAppInstallation.Source.appStore, .setapp, .intune] {
             let marker = source == .appStore ? oldReceipt : source == .setapp ? oldKey : recordedAssigned
@@ -2490,6 +2506,7 @@ enum ExternalInstallTests {
         dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
         case "$1" in
           --version) echo "Homebrew fixture" ;;
+          --caskroom) echo "$dir/Caskroom" ;;
           list) echo stable ;;
           info) echo '{"casks":[{"token":"beta","full_token":"beta","tap":"homebrew/cask","homepage":"https://example.test/","url":"https://example.test/app.dmg","artifacts":[{"app":["Shared.app"]}],"deprecated":false,"disabled":false}]}' ;;
           install) printf '%s\\n' "$@" > "$dir/arguments" ;;
@@ -2504,6 +2521,39 @@ enum ExternalInstallTests {
         defaults.setValue(managedDirectory.path, for: Preferences.appdirPath)
         defaults.setValue(true, for: Preferences.detectExternallyInstalledApps)
         defaults.setValue(true, for: Preferences.offerHomebrewManagement)
+        let nestedBrew = prefix.appendingPathComponent("Homebrew/bin/brew")
+        try fm.createDirectory(at: nestedBrew.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let nestedScript = """
+        #!/bin/sh
+        prefix="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+        if [ "$1" = "--caskroom" ]; then
+          if [ -f "$prefix/invalid-caskroom" ]; then echo relative; else echo "$prefix/Caskroom"; fi
+        else exit 2; fi
+        """
+        try nestedScript.write(to: nestedBrew, atomically: true, encoding: .utf8)
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: nestedBrew.path)
+        defaults.setValue(nestedBrew.path, for: Preferences.customUserBrewPath)
+        let pinned = try await BrewOperationConfiguration.current.resolvingCaskroom()
+        precondition(pinned.caskroom == prefix.appendingPathComponent("Caskroom").standardizedFileURL)
+        let pinnedTargets = try InstalledAppLocator.recordedAppURLs(
+            token: "stable", caskroom: pinned.caskroom!, requireRecordedOwnership: true
+        )
+        precondition(pinnedTargets == [managedApp.resolvingSymlinksInPath().standardizedFileURL],
+                     "A nested Homebrew executable must use its reported Caskroom")
+        let invalidCaskroom = prefix.appendingPathComponent("invalid-caskroom")
+        try Data().write(to: invalidCaskroom)
+        let stillPinned = try await pinned.resolvingCaskroom()
+        precondition(stillPinned.caskroom == pinned.caskroom, "An operation must retain its captured Caskroom")
+        do {
+            _ = try await BrewOperationConfiguration.current.resolvingCaskroom()
+            preconditionFailure("An invalid reported Caskroom must fail closed")
+        } catch CaskAdoptionError.installationTargetsUnavailable { }
+        try fm.removeItem(at: invalidCaskroom)
+        defaults.setValue(brew.path, for: Preferences.customUserBrewPath)
+        do {
+            _ = try await pinned.resolvingCaskroom()
+            preconditionFailure("Pinned Caskroom configuration must expire when Homebrew changes")
+        } catch CaskAdoptionError.configurationChanged { }
         func record(_ token: String) -> CaskRecord {
             CaskRecord(
                 token: token, fullToken: token, tap: "homebrew/cask", name: "Shared",
@@ -2572,20 +2622,20 @@ enum ExternalInstallTests {
         try JSONSerialization.data(withJSONObject: ["uninstall_artifacts": [["app": ["Source.app"]]]])
             .write(to: receiptRoom.appendingPathComponent(".metadata/INSTALL_RECEIPT.json"))
         let receiptTargets = try InstalledAppLocator.recordedAppURLs(
-            token: "receipt-cask", executable: brew, requireRecordedOwnership: true
+            token: "receipt-cask", caskroom: prefix.appendingPathComponent("Caskroom"), requireRecordedOwnership: true
         )
         precondition(receiptTargets == [managedApp.resolvingSymlinksInPath().standardizedFileURL])
         try fm.moveItem(at: receiptMetadata.appendingPathComponent("receipt-cask.json"),
                         to: receiptMetadata.appendingPathComponent("receipt-cask.internal.json"))
         let internalTargets = try InstalledAppLocator.recordedAppURLs(
-            token: "receipt-cask", executable: brew, requireRecordedOwnership: true
+            token: "receipt-cask", caskroom: prefix.appendingPathComponent("Caskroom"), requireRecordedOwnership: true
         )
         precondition(internalTargets == receiptTargets, "Internal JSON must preserve staged-path metadata")
         try fm.removeItem(at: receiptMetadata.appendingPathComponent("receipt-cask.internal.json"))
         try JSONSerialization.data(withJSONObject: ["url_specs": ["only_path": "../outside"]])
             .write(to: receiptMetadata.appendingPathComponent("receipt-cask.json"))
         do {
-            _ = try InstalledAppLocator.recordedAppURLs(token: "receipt-cask", executable: brew)
+            _ = try InstalledAppLocator.recordedAppURLs(token: "receipt-cask", caskroom: prefix.appendingPathComponent("Caskroom"))
             preconditionFailure("An unsafe recorded source path must fail closed")
         } catch CaskAdoptionError.installationTargetsUnavailable { }
         try fm.removeItem(at: receiptMetadata.appendingPathComponent("receipt-cask.json"))
@@ -2593,18 +2643,18 @@ enum ExternalInstallTests {
         let directLink = receiptRoom.appendingPathComponent("1/Source.app")
         try fm.createSymbolicLink(at: directLink, withDestinationURL: managedApp)
         let rubyTargets = try InstalledAppLocator.recordedAppURLs(
-            token: "receipt-cask", executable: brew, requireRecordedOwnership: true
+            token: "receipt-cask", caskroom: prefix.appendingPathComponent("Caskroom"), requireRecordedOwnership: true
         )
         precondition(rubyTargets == [managedApp.resolvingSymlinksInPath().standardizedFileURL])
         try fm.removeItem(at: directLink)
         try fm.createSymbolicLink(at: directLink, withDestinationURL: prefix.appendingPathComponent("Missing.app"))
         let missingTargets = try InstalledAppLocator.recordedAppURLs(
-            token: "receipt-cask", executable: brew, requireRecordedOwnership: true
+            token: "receipt-cask", caskroom: prefix.appendingPathComponent("Caskroom"), requireRecordedOwnership: true
         )
         precondition(missingTargets.isEmpty, "A recorded link to a missing app must not block other casks")
         try fm.removeItem(at: directLink)
         do {
-            _ = try InstalledAppLocator.recordedAppURLs(token: "receipt-cask", executable: brew)
+            _ = try InstalledAppLocator.recordedAppURLs(token: "receipt-cask", caskroom: prefix.appendingPathComponent("Caskroom"))
             preconditionFailure("Ruby-only metadata with an unverifiable staged link must fail closed")
         } catch CaskAdoptionError.installationTargetsUnavailable { }
     }
@@ -2805,7 +2855,7 @@ enum ExternalInstallTests {
         let app = prefix.appendingPathComponent("Apps/Shared.app")
         try fm.createDirectory(at: brew.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.createDirectory(at: app, withIntermediateDirectories: true)
-        try "#!/bin/sh\nif [ \"$1\" = list ]; then printf 'stable\\nbeta\\n'; fi\n".write(
+        try "#!/bin/sh\nif [ \"$1\" = list ]; then printf 'stable\\nbeta\\n'; elif [ \"$1\" = --caskroom ]; then printf '%s\\n' \"$(dirname \"$(dirname \"$0\")\")/Caskroom\"; fi\n".write(
             to: brew, atomically: true, encoding: .utf8
         )
         try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: brew.path)
@@ -2902,6 +2952,7 @@ enum ExternalInstallTests {
         prefix="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
         case "$1" in
           --version) echo "Homebrew fixture" ;;
+          --caskroom) echo "$prefix/Caskroom" ;;
           list)
             touch "$prefix/list-started"
             while [ -f "$prefix/pause-list" ]; do sleep 0.01; done
@@ -3038,6 +3089,7 @@ enum ExternalInstallTests {
         fixture_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
         case "$1" in
           --version) echo "Homebrew fixture" ;;
+          --caskroom) echo "$fixture_dir/Caskroom" ;;
           list) if [ -f "$fixture_dir/receipts" ]; then cat "$fixture_dir/receipts"; fi ;;
           outdated) : ;;
           info) cat "$fixture_dir/metadata.json" ;;
@@ -3195,6 +3247,7 @@ enum ExternalInstallTests {
         fixture_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
         case "$1" in
           --version) echo "Homebrew fixture" ;;
+          --caskroom) echo "$fixture_dir/Caskroom" ;;
           list)
             if [ -f "$fixture_dir/fail-list" ]; then echo "fixture list failure" >&2; exit 1; fi
             if [ -f "$fixture_dir/pause-list" ]; then

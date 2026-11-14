@@ -337,7 +337,7 @@ final class BrewService {
                 return
             }
 
-            guard configuration == .current else {
+            guard configuration.matchesSettings(of: .current) else {
                 await self.reportManagementBlock(for: vm, error: CaskAdoptionError.configurationChanged)
                 return
             }
@@ -378,7 +378,7 @@ final class BrewService {
                 return
             }
 
-            guard configuration == .current else {
+            guard configuration.matchesSettings(of: .current) else {
                 await self.reportManagementBlock(for: vm, error: CaskAdoptionError.configurationChanged)
                 return
             }
@@ -504,6 +504,9 @@ final class BrewService {
         in vms: [CaskViewModel], configuration: BrewOperationConfiguration,
         bundleNames: [CaskId: [String]] = [:]
     ) async throws -> ExternalInstallationPreflight {
+        guard let caskroom = configuration.caskroom else {
+            throw CaskAdoptionError.installationTargetsUnavailable
+        }
         let managed = try await InstalledCaskService().getInstalledCasks(configuration: configuration)
         let candidates = vms.map {
             (token: $0.fullToken, name: $0.name, bundles: bundleNames[$0.fullToken] ?? $0.appBundleNames,
@@ -514,7 +517,7 @@ final class BrewService {
             for token in managed {
                 try Task.checkCancellation()
                 let urls = try InstalledAppLocator.recordedAppURLs(
-                    token: (token as NSString).lastPathComponent, executable: configuration.executable,
+                    token: (token as NSString).lastPathComponent, caskroom: caskroom,
                     requireRecordedOwnership: true
                 )
                 ownedByToken[token] = Set(urls.map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
@@ -607,6 +610,15 @@ final class BrewService {
                 return
             }
 
+            let pinned: BrewOperationConfiguration
+            do {
+                pinned = try await configuration.resolvingCaskroom()
+            } catch {
+                if Task.isCancelled { vm.progressState = .idle }
+                else { await self.reportManagementBlock(for: vm, error: error) }
+                return
+            }
+            let configuration = pinned
             guard !(await self.blockProtectedManagement(of: vm, configuration: configuration)) else { return }
 
             // Make sure brew path is valid
@@ -640,6 +652,9 @@ final class BrewService {
         artCraftInventory: ArtCraftAppDetector.Snapshot? = nil,
         bundleNames: [CaskId: [String]] = [:]
     ) async throws {
+        guard let caskroom = configuration.caskroom else {
+            throw CaskAdoptionError.installationTargetsUnavailable
+        }
         let candidates = vms.map {
             (token: $0.token, name: $0.name, bundles: bundleNames[$0.fullToken] ?? $0.appBundleNames,
              knownURL: $0.installedBundleURL ?? $0.externalAppURL ?? $0.protectedAppInstallation?.url)
@@ -651,7 +666,7 @@ final class BrewService {
             let artCraft = try artCraftInventory ?? loadArtCraftInventory()
             return try candidates.map { candidate in
                 let recorded = try InstalledAppLocator.recordedAppURLs(
-                    token: candidate.token, executable: configuration.executable
+                    token: candidate.token, caskroom: caskroom
                 )
                 let protection = try ExternalAppDetector.protectedInstallation(
                     bundleNames: candidate.bundles, displayName: candidate.name,
@@ -855,6 +870,17 @@ final class BrewService {
                 for vm in vms { vm.progressState = .idle }
                 return
             }
+            let pinned: BrewOperationConfiguration
+            do {
+                pinned = try await configuration.resolvingCaskroom()
+            } catch {
+                for vm in vms {
+                    if Task.isCancelled { vm.progressState = .idle }
+                    else { await self.reportManagementBlock(for: vm, error: error) }
+                }
+                return
+            }
+            let configuration = pinned
             let intuneInventory: IntuneAppDetector.Snapshot
             let artCraftInventory: ArtCraftAppDetector.Snapshot
             do {
@@ -1030,7 +1056,7 @@ final class BrewService {
             for try await line in Shell.stream(configuration.executable, arguments, pty: true) {
                 if Task.isCancelled { break }
                 completeOutput += line + "\n"
-                if configuration != .current { configurationChanged = true }
+                if !configuration.matchesSettings(of: .current) { configurationChanged = true }
                 guard !configurationChanged else { continue }
                 applyBatchLine(line, kind: kind, lookup: lookup, perCaskError: &perCaskError)
             }
@@ -1046,7 +1072,7 @@ final class BrewService {
             for vm in vms { vm.progressState = .idle }
             return
         }
-        if configurationChanged || configuration != .current {
+        if configurationChanged || !configuration.matchesSettings(of: .current) {
             await failBatchForConfigurationChange(vms, output: completeOutput)
             return
         }
@@ -1058,7 +1084,7 @@ final class BrewService {
         } catch is CancellationError {
             for vm in vms { vm.progressState = .idle }
         } catch {
-            guard configuration == .current else {
+            guard configuration.matchesSettings(of: .current) else {
                 await failBatchForConfigurationChange(vms, output: completeOutput)
                 return
             }

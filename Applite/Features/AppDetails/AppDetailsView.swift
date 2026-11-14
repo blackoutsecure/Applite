@@ -352,6 +352,7 @@ struct AppDetailsView: View {
         let token = cask.token
         let name = cask.name
         do {
+            let configuration = isManaged ? try await configuration.resolvingCaskroom() : configuration
             let info = try await Task.detached { () throws -> InstalledAppMetadata? in
                 guard let url = try InstalledAppLocator.metadataAppURL(
                     token: token, displayName: name, preferredURL: knownURL,
