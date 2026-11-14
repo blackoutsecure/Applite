@@ -2153,6 +2153,12 @@ enum ExternalInstallTests {
             caskroom: recordedLink.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent(),
             token: "review-recorded", version: "1.0", source: "Nested/Review Protected.app"
         )
+        let unrelated = root.appendingPathComponent("Unrelated Payload.app")
+        try fm.createDirectory(at: unrelated, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(
+            at: recordedLink.deletingLastPathComponent().appendingPathComponent("Unrelated.app"),
+            withDestinationURL: unrelated
+        )
         let loop = recordedLink.deletingLastPathComponent().appendingPathComponent("Loop")
         try fm.createSymbolicLink(at: loop, withDestinationURL: recordedLink.deletingLastPathComponent())
         defaults.setValue(recordedBrew.path, for: Preferences.customUserBrewPath)
@@ -2519,6 +2525,26 @@ enum ExternalInstallTests {
         await service.install(sibling, confirmedConfiguration: .current).value
         precondition(sibling.progressState.isFailed && !fm.fileExists(atPath: arguments.path),
                      "Unknown managed ownership must fail closed")
+        let receiptRoom = prefix.appendingPathComponent("Caskroom/receipt-cask")
+        let staged = receiptRoom.appendingPathComponent("1/Payload")
+        let receiptMetadata = receiptRoom.appendingPathComponent(".metadata/1/1/Casks")
+        try fm.createDirectory(at: staged, withIntermediateDirectories: true)
+        try fm.createDirectory(at: receiptMetadata, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: staged.appendingPathComponent("Source.app"), withDestinationURL: managedApp)
+        try JSONSerialization.data(withJSONObject: ["url_specs": ["only_path": "Payload"]])
+            .write(to: receiptMetadata.appendingPathComponent("receipt-cask.json"))
+        try JSONSerialization.data(withJSONObject: ["uninstall_artifacts": [["app": ["Source.app"]]]])
+            .write(to: receiptRoom.appendingPathComponent(".metadata/INSTALL_RECEIPT.json"))
+        let receiptTargets = try InstalledAppLocator.recordedAppURLs(
+            token: "receipt-cask", executable: brew, requireRecordedOwnership: true
+        )
+        precondition(receiptTargets == [managedApp.resolvingSymlinksInPath().standardizedFileURL])
+        try JSONSerialization.data(withJSONObject: ["url_specs": ["only_path": "../outside"]])
+            .write(to: receiptMetadata.appendingPathComponent("receipt-cask.json"))
+        do {
+            _ = try InstalledAppLocator.recordedAppURLs(token: "receipt-cask", executable: brew)
+            preconditionFailure("An unsafe recorded source path must fail closed")
+        } catch CaskAdoptionError.installationTargetsUnavailable { }
     }
 
     @MainActor
