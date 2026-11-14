@@ -156,6 +156,7 @@ final class CaskManager {
 
     func selectedHomebrewDidChange(surfacingErrorsIn surface: AlertManager) {
         invalidateAdoptionConsent()
+        selectedAppDetails = nil
         detectionSettingTask?.cancel()
         brewConfigurationTask?.cancel()
         homebrewConfigurationGeneration &+= 1
@@ -170,7 +171,13 @@ final class CaskManager {
             do {
                 try await Task.sleep(for: .milliseconds(300))
                 try Task.checkCancellation()
+                let isValid = await BrewPaths.isBrewPathValid(at: configuration.executable)
+                try Task.checkCancellation()
+                try configuration.validateCurrent()
+                guard isValid else { return }
             } catch is CancellationError {
+                return
+            } catch CaskAdoptionError.configurationChanged {
                 return
             } catch {
                 surface.show(error: error, title: "Couldn't load installed apps")
@@ -549,6 +556,7 @@ final class CaskManager {
         installedStateResolutionCount += 1
         defer { installedStateResolutionCount -= 1 }
         let generation = homebrewConfigurationGeneration
+        var ownershipScanError: Error?
 
         do {
             // Run the refresh on the serial brew queue so its `brew list`/`outdated` snapshot can't
@@ -560,7 +568,9 @@ final class CaskManager {
             // that lock fail with "already locked". Bootstrap primes Ruby up front, but keep these
             // ordered as a second line of defense.
             try await brewService.runSerialized {
-                try await self.dataLoader.refreshInstalled(configuration: configuration)
+                try await self.dataLoader.refreshInstalled(configuration: configuration, onOwnershipScanFailure: { error in
+                    ownershipScanError = error
+                })
                 guard generation == self.homebrewConfigurationGeneration else {
                     throw CaskAdoptionError.configurationChanged
                 }
@@ -579,6 +589,10 @@ final class CaskManager {
                     self.outdatedRefreshFailed = true
                     Self.logger.error("Outdated refresh failed: \(error.localizedDescription)")
                 }
+            }
+            if let ownershipScanError {
+                Self.logger.error("App ownership scan failed: \(ownershipScanError.localizedDescription)")
+                surface.show(error: ownershipScanError, title: "Couldn't scan app management sources")
             }
             Self.logger.info("Installed/outdated state loaded successfully!")
         } catch CaskAdoptionError.configurationChanged {

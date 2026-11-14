@@ -54,7 +54,7 @@ struct AppSettingsView: View {
             caskManager.applyAppManagementSettings(surfacingErrorsIn: alert)
         }
         .onChange(of: [String(appdirOn), appdirPath]) { _, _ in
-            caskManager.applyExternalAppDetectionSetting(debounce: true, surfacingErrorsIn: alert)
+            caskManager.selectedHomebrewDidChange(surfacingErrorsIn: alert)
         }
     }
 
@@ -72,8 +72,8 @@ struct AppSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .disabled(caskManager.isRefreshingCatalog)
             }
+            .disabled(caskManager.isRefreshingCatalog)
         }
     }
 

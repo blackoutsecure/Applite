@@ -64,20 +64,51 @@ enum InstalledAppLocator {
         }
         var result: Set<URL> = []
         for version in versions.sorted(by: { $0.lastPathComponent > $1.lastPathComponent }) {
-            guard try version.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { continue }
-            let entries = try fm.contentsOfDirectory(at: version, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
-            for entry in entries where entry.pathExtension == "app" {
-                let resolved = entry.resolvingSymlinksInPath().standardizedFileURL
-                do {
-                    if try resolved.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true {
-                        result.insert(resolved)
+            let versionValues = try version.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard versionValues.isDirectory == true, versionValues.isSymbolicLink != true else { continue }
+            var directories = [version]
+            while let directory = directories.popLast() {
+                let entries = try fm.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                    options: [.skipsHiddenFiles]
+                )
+                for entry in entries {
+                    if entry.pathExtension == "app" {
+                        let resolved = entry.resolvingSymlinksInPath().standardizedFileURL
+                        do {
+                            if try resolved.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true {
+                                result.insert(resolved)
+                            }
+                        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+                            continue
+                        }
+                    } else {
+                        let values = try entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                        if values.isDirectory == true && values.isSymbolicLink != true {
+                            directories.append(entry)
+                        }
                     }
-                } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
-                    continue
                 }
             }
         }
         return result.sorted { $0.path < $1.path }
+    }
+
+    nonisolated static func launchURL(
+        token: String, displayName: String, preferredURL: URL?,
+        isManaged: Bool, configuration: BrewOperationConfiguration
+    ) throws -> URL? {
+        guard isManaged else { return preferredURL }
+        if let preferredURL {
+            do {
+                if try preferredURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true {
+                    return preferredURL
+                }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+                // A managed operation may have moved the selected bundle.
+            }
+        }
+        return appURL(token: token, displayName: displayName, configuration: configuration)
     }
 
     nonisolated static func metadataAppURL(
@@ -291,7 +322,7 @@ enum InstalledAppLocator {
     private nonisolated static var appDirectory: URL {
         let custom = UserDefaults.standard.value(for: Preferences.appdirPath)
         if UserDefaults.standard.value(for: Preferences.appdirOn), !custom.isEmpty {
-            return URL(fileURLWithPath: (custom as NSString).expandingTildeInPath)
+            return URL(fileURLWithPath: (custom as NSString).expandingTildeInPath, isDirectory: true)
         }
         return URL.applicationDirectory
     }

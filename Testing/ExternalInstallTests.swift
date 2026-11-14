@@ -284,6 +284,12 @@ enum ExternalInstallTests {
         defaults.removeObject(forKey: Preferences.detectExternallyInstalledApps.name)
         defaults.removeObject(forKey: Preferences.offerHomebrewManagement.name)
         defaults.setValue(true, for: Preferences.appdirOn)
+        let futureApps = root.appendingPathComponent("New App Directory", isDirectory: true)
+        defaults.setValue(futureApps.path, for: Preferences.appdirPath)
+        let configurationBeforeCreation = BrewOperationConfiguration.current
+        try fm.createDirectory(at: futureApps, withIntermediateDirectories: true)
+        precondition(configurationBeforeCreation == BrewOperationConfiguration.current,
+                     "Creating an unchanged custom app directory must not change the pinned configuration")
         defaults.setValue("/tmp/Apps with 'quotes'", for: Preferences.appdirPath)
         let arguments = BrewService.installArguments(fullToken: tapRecord.fullToken)
         precondition(arguments == [
@@ -605,11 +611,14 @@ enum ExternalInstallTests {
         precondition(InstalledAppDetails.updateStatus(
             isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, brew: missingStatus
         ) == .unknown)
-        for info in [latestInstalled, latestAvailable, selfUpdating, unknownAutoUpdates] {
+        for info in [latestInstalled, latestAvailable, selfUpdating] {
             precondition(InstalledAppDetails.updateStatus(
                 isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, brew: info
             ) == .unknown, "Placeholder versions or self-updating apps cannot establish update status")
         }
+        precondition(InstalledAppDetails.updateStatus(
+            isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, brew: unknownAutoUpdates
+        ) == .current, "An absent auto-update flag must preserve Homebrew's reported update status")
         precondition(InstalledAppDetails.version(
             isLocallyInstalled: true, isHomebrewManaged: true, hasOtherOwner: false, metadata: nil, brew: latestInstalled
         ) == .unknown)
@@ -693,6 +702,12 @@ enum ExternalInstallTests {
         try writeApp(newApp, version: "2.0")
         try fm.removeItem(at: oldLink)
         _ = try record(newApp, version: "2.0", configuration: configurationA)
+        let recoveredLaunch = try InstalledAppLocator.launchURL(
+            token: token, displayName: "Metadata Fixture", preferredURL: oldApp,
+            isManaged: true, configuration: configurationA
+        )
+        precondition(recoveredLaunch?.path == newApp.path,
+                     "Opening a managed app must recover a moved bundle from the pinned Caskroom")
         for _ in 0..<2 {
             let recovered = try resolve(oldApp, configuration: configurationA)
             let metadata = try InstalledAppMetadata.read(at: recovered)
@@ -2008,9 +2023,11 @@ enum ExternalInstallTests {
         try PropertyListSerialization.data(
             fromPropertyList: ["CFBundleIdentifier": recordedIdentifier], format: .xml, options: 0
         ).write(to: oldApp.appendingPathComponent("Contents/Info.plist"))
-        let recordedLink = root.appendingPathComponent("Recorded Brew/Caskroom/review-recorded/1.0/Review Protected.app")
+        let recordedLink = root.appendingPathComponent("Recorded Brew/Caskroom/review-recorded/1.0/Nested/Review Protected.app")
         try fm.createDirectory(at: recordedLink.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.createSymbolicLink(at: recordedLink, withDestinationURL: oldApp)
+        let loop = recordedLink.deletingLastPathComponent().appendingPathComponent("Loop")
+        try fm.createSymbolicLink(at: loop, withDestinationURL: recordedLink.deletingLastPathComponent())
         defaults.setValue(recordedBrew.path, for: Preferences.customUserBrewPath)
         let targets = try InstalledAppLocator.recordedAppURLs(token: "review-recorded", executable: recordedBrew)
         precondition(targets == [oldApp.resolvingSymlinksInPath().standardizedFileURL])
@@ -2467,7 +2484,7 @@ enum ExternalInstallTests {
             touch "$prefix/list-started"
             while [ -f "$prefix/pause-list" ]; do sleep 0.01; done
             if [ -f "$prefix/fail-list" ]; then echo "receipt query failed" >&2; exit 1; fi ;;
-          outdated) : ;;
+          outdated) touch "$prefix/outdated-started" ;;
           uninstall) touch "$prefix/uninstall-started" ;;
         esac
         """
@@ -2478,6 +2495,20 @@ enum ExternalInstallTests {
         let service = BrewService(notify: { _, _, _ in }, intuneInventory: { .empty }, artCraftInventory: { .empty })
         let manager = CaskManager(dataLoader: loader, registry: registry, brewService: service)
         let vm = registry.viewModel(for: stable)
+        let settingsAlert = AlertManager()
+        manager.selectedAppDetails = vm
+        defaults.setValue(secondBrew.path + "-partial", for: Preferences.customUserBrewPath)
+        manager.selectedHomebrewDidChange(surfacingErrorsIn: settingsAlert)
+        precondition(manager.selectedAppDetails == nil, "Changing configuration must close stale details")
+        let invalidDeadline = Date().addingTimeInterval(5)
+        while manager.isResolvingInstalledState && Date() < invalidDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        precondition(!manager.isResolvingInstalledState && settingsAlert.current == nil,
+                     "An incomplete brew path must not show a modal receipt failure")
+        manager.uninstall(vm)
+        precondition(!fm.fileExists(atPath: secondPrefix.appendingPathComponent("uninstall-started").path),
+                     "Invalid paths must keep Homebrew writes blocked")
         defaults.setValue(secondBrew.path, for: Preferences.customUserBrewPath)
         manager.selectedHomebrewDidChange(surfacingErrorsIn: manager.alert)
         precondition(!vm.isInstalled && manager.isResolvingInstalledState,
@@ -2527,6 +2558,31 @@ enum ExternalInstallTests {
         _ = try await service.runSerialized { true }
         precondition(vm.progressState.isFailed,
                      "A successful retry must unblock actions, which still verify the selected receipt")
+        try fm.removeItem(at: secondPrefix.appendingPathComponent("outdated-started"))
+        defaults.setValue(true, for: Preferences.detectExternallyInstalledApps)
+        let failedInventoryService = BrewService(
+            notify: { _, _, _ in },
+            intuneInventory: { throw CaskAdoptionError.intuneInventoryUnavailable },
+            artCraftInventory: { .empty }
+        )
+        let scanManager = CaskManager(dataLoader: loader, registry: registry, brewService: failedInventoryService)
+        let scanAlert = AlertManager()
+        scanManager.selectedHomebrewDidChange(surfacingErrorsIn: scanAlert)
+        let scanDeadline = Date().addingTimeInterval(5)
+        while scanManager.isResolvingInstalledState && Date() < scanDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        precondition(!scanManager.isResolvingInstalledState && scanAlert.current != nil
+                     && fm.fileExists(atPath: secondPrefix.appendingPathComponent("outdated-started").path)
+                     && !scanManager.outdatedRefreshFailed,
+                     "Ownership scan failures must be reported without suppressing valid receipt and outdated refreshes")
+        vm.isInstalled = true
+        vm.progressState = .idle
+        scanManager.uninstall(vm)
+        _ = try await failedInventoryService.runSerialized { true }
+        precondition(vm.progressState.isFailed
+                     && !fm.fileExists(atPath: secondPrefix.appendingPathComponent("uninstall-started").path),
+                     "Writes must still fail closed when ownership inventory is unavailable")
     }
 
     @MainActor

@@ -2,6 +2,8 @@
 
 ## Non-destructive external-install regression tests
 
+Creating a missing custom app directory must not change its captured Homebrew configuration.
+
 Live-artifact fixtures rename Old.app to a protected New.app, revoke prerequisites
 during the final ownership await, and reject incomplete target metadata. Injected
 catalog failure/success verifies refresh-baseline results without network requests.
@@ -11,11 +13,15 @@ The selected row's URL remains distinct from protection evidence. With external
 detection disabled, managed aliases still collapse by their recorded bundle path
 without reading external ownership inventories. A paused profile switch verifies
 immediate receipt invalidation, blocked actions, and fresh uninstall receipt checks.
+Invalid partial brew paths do not raise a modal alert or unblock writes, and changing
+configuration closes stale details.
+An unavailable ownership inventory is reported separately while receipt and outdated
+queries finish; Homebrew writes still fail closed.
 
 Review-race cases pause single and bulk metadata requests before adding App Store,
 Setapp or Intune evidence or changing Homebrew. A two-entry batch also pauses its
 last metadata request to verify the first entry is rechecked. Recorded old-appdir
-targets, managed-receipt aliases, separate bundles, and immediate single/bulk
+targets (including nested staging links and a directory-symlink loop), managed-receipt aliases, separate bundles, and immediate single/bulk
 Installed projection reconciliation use isolated filesystem fixtures.
 
 Hidden-self fixtures ensure an external Applite bundle contributes neither a row
@@ -98,8 +104,9 @@ Installed-details fixtures check fresh release/build metadata, languages, malfor
 and missing plists, beta versions, and Unknown update status for external/protected
 apps, self-updaters, placeholders, and missing Homebrew version or status. They also check managed current and
 outdated outcomes and preserve local version information when Homebrew is unavailable.
+An omitted auto-update flag preserves a reported Homebrew outdated status.
 Managed-location fixtures move/rename a bundle, repeat the lookup with a stale cached
-path, select a second pinned Homebrew, and retain an explicit external/protected
+path, verify opening resolves the moved managed bundle, select a second pinned Homebrew, and retain an explicit external/protected
 distribution. When multiple historical targets remain, they retain ownership evidence
 while the selected recorded bundle supplies metadata. Malformed recovered/selected
 plists must fail rather than switch apps. Explicit successful catalog refresh advances
@@ -123,7 +130,8 @@ manager, such as Microsoft Intune; an unrecognized external source should be Unk
 Homebrew receipt status and any additional detected sources remain separate.
 Retry a failed Homebrew lookup while local facts are loaded, and retry a local
 metadata error while Homebrew details are loaded: the unaffected source must stay
-visible and must not reload. Successful single and bulk update/reinstall fixtures
+visible and must not reload. Retry an unavailable local bundle after restoring it.
+Successful single and bulk update/reinstall fixtures
 advance metadata revisions and replace bundle versions without changing Installed.
 With a completed details page open, switch between two Homebrew profiles that both
 have the cask installed. Receipt/available versions and Outdated must reload without
