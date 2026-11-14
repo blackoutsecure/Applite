@@ -5,6 +5,15 @@ import os
 
 @main
 enum ExternalInstallTests {
+    private static func writeRecordedArtifacts(
+        caskroom: URL, token: String, version: String, source: String
+    ) throws {
+        let directory = caskroom.appendingPathComponent(".metadata/\(version)/20260101000000/Casks")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(withJSONObject: ["artifacts": [["app": [source]]]])
+        try data.write(to: directory.appendingPathComponent("\(token).json"))
+    }
+
     @MainActor
     static func main() async throws {
         precondition(Bundle.main.bundleIdentifier == "dev.applite.ExternalInstallTests")
@@ -72,6 +81,26 @@ enum ExternalInstallTests {
         let dto = try JSONDecoder().decode(CaskDTO.self, from: Data(json.utf8))
         let record = CaskRecord(fromDTO: dto)
         precondition(record.appBundleNames == ["Renamed App.app", "Helper.app"])
+        let nestedJSON = """
+        {"app":["Payload/Source.app",{"target":"Suite/Renamed.app"}]}
+        """
+        let nested = try JSONDecoder().decode(CaskArtifact.self, from: Data(nestedJSON.utf8))
+        precondition(nested.bundleName == "Suite/Renamed.app")
+        let sourceOnly = try JSONDecoder().decode(CaskArtifact.self, from: Data(#"{"app":["Payload/Source.app"]}"#.utf8))
+        precondition(sourceOnly.bundleName == "Source.app")
+        for unsafe in ["../Escape.app", "/Applications/Escape.app", "Suite/../Escape.app", "Suite//Escape.app"] {
+            let unsafeJSON = try JSONSerialization.data(withJSONObject: ["app": ["Source.app", ["target": unsafe]]])
+            let artifact = try JSONDecoder().decode(CaskArtifact.self, from: unsafeJSON)
+            precondition(artifact.bundleName == nil, "Unsafe app target paths must fail verification")
+        }
+        let nestedApp = customApps.appendingPathComponent("Suite/Renamed.app", isDirectory: true)
+        try fm.createDirectory(at: nestedApp, withIntermediateDirectories: true)
+        precondition(ExternalAppDetector.appURL(
+            bundleNames: [nested.bundleName!], displayName: "Unrelated", directories: directories
+        ) == nestedApp, "Safe nested destination paths must be detected in the configured app directory")
+        let nestedArtCraft = ArtCraftAppDetector.Snapshot(appURLs: [nestedApp])
+        precondition(nestedArtCraft.matchingAppURLs(bundleNames: [nested.bundleName!], displayName: "Unrelated") == [nestedApp],
+                     "Nested target paths must still match ArtCraft's bundle names")
         precondition(ExternalAppDetector.appURL(
             bundleNames: record.appBundleNames, displayName: record.name, directories: directories
         ) == nil)
@@ -186,6 +215,19 @@ enum ExternalInstallTests {
                 VALUES ('legacy', 'legacy', 'homebrew/cask', 'Legacy', 'Legacy app');
                 INSERT INTO metadata (key, value) VALUES ('lastSyncDate', '2026-01-01');
                 """)
+        }
+        let v2Database = try DatabaseQueue()
+        try AppDatabase.migrator().migrate(v2Database, upTo: "v2_appBundleNames")
+        try await v2Database.write { db in
+            try record.insert(db)
+            try db.execute(sql: "INSERT INTO metadata (key, value) VALUES ('lastSyncDate', '2026-01-01')")
+        }
+        try AppDatabase.migrator().migrate(v2Database)
+        try await v2Database.read { db in
+            let migrated = try CaskRecord.fetchOne(db, key: record.fullToken)
+            let lastSync = try String.fetchOne(db, sql: "SELECT value FROM metadata WHERE key = 'lastSyncDate'")
+            precondition(migrated?.appBundleNames == [] && lastSync == nil,
+                         "Legacy basenames must be reverified until the catalog is refreshed")
         }
         try AppDatabase.migrator().migrate(dbQueue)
         try await dbQueue.write { db in
@@ -695,6 +737,8 @@ enum ExternalInstallTests {
             let directory = configuration.executable.deletingLastPathComponent().deletingLastPathComponent()
                 .appendingPathComponent("Caskroom/\(token)/\(version)")
             try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            try writeRecordedArtifacts(caskroom: directory.deletingLastPathComponent(), token: token,
+                                       version: version, source: app.lastPathComponent)
             let link = directory.appendingPathComponent(app.lastPathComponent)
             try fm.createSymbolicLink(at: link, withDestinationURL: app)
             return link
@@ -715,6 +759,14 @@ enum ExternalInstallTests {
         let initial = try resolve(oldApp, configuration: configurationA)
         let initialMetadata = try InstalledAppMetadata.read(at: initial)
         precondition(initialMetadata.version == "1.0")
+        let unrelated = apps.appendingPathComponent("Unrelated.app")
+        try writeApp(unrelated, version: "9.0")
+        let unrelatedLink = oldLink.deletingLastPathComponent().appendingPathComponent("Payload/Unrelated.app")
+        try fm.createDirectory(at: unrelatedLink.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: unrelatedLink, withDestinationURL: unrelated)
+        let initialTargets = try InstalledAppLocator.recordedAppURLs(token: token, executable: configurationA.executable)
+        precondition(initialTargets == [oldApp.resolvingSymlinksInPath().standardizedFileURL],
+                     "Unrecorded payload apps must not be treated as managed artifacts")
         try fm.moveItem(at: oldApp, to: newApp)
         try writeApp(newApp, version: "2.0")
         try fm.removeItem(at: oldLink)
@@ -749,6 +801,27 @@ enum ExternalInstallTests {
         let metadataB = try InstalledAppMetadata.read(at: selectedB)
         precondition(selectedB.path == otherApp.path && metadataB.version == "3.0",
                      "A different pinned Homebrew must not reuse an existing bundle from the previous profile")
+        let receiptToken = "metadata-receipt"
+        let receiptCaskroom = configurationA.executable.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Caskroom/\(receiptToken)")
+        let staged = receiptCaskroom.appendingPathComponent("1.0/Payload")
+        try fm.createDirectory(at: staged, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: staged.appendingPathComponent("Source.app"), withDestinationURL: otherApp)
+        let receiptMetadata = receiptCaskroom.appendingPathComponent(".metadata/1.0/20260101000000/Casks")
+        try fm.createDirectory(at: receiptMetadata, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: ["url_specs": ["only_path": "Payload"]])
+            .write(to: receiptMetadata.appendingPathComponent("\(receiptToken).json"))
+        try JSONSerialization.data(withJSONObject: ["uninstall_artifacts": [["app": ["Source.app"]]]])
+            .write(to: receiptCaskroom.appendingPathComponent(".metadata/INSTALL_RECEIPT.json"))
+        let receiptTargets = try InstalledAppLocator.recordedAppURLs(token: receiptToken, executable: configurationA.executable)
+        precondition(receiptTargets == [otherApp.resolvingSymlinksInPath().standardizedFileURL],
+                     "Receipt artifacts and recorded only_path must identify the staged source")
+        try JSONSerialization.data(withJSONObject: ["url_specs": ["only_path": "../outside"]])
+            .write(to: receiptMetadata.appendingPathComponent("\(receiptToken).json"))
+        do {
+            _ = try InstalledAppLocator.recordedAppURLs(token: receiptToken, executable: configurationA.executable)
+            preconditionFailure("An unsafe recorded source path must fail closed")
+        } catch CaskAdoptionError.installationTargetsUnavailable { }
         let launchB = try InstalledAppLocator.launchURL(
             token: token, displayName: "Metadata Fixture", preferredURL: newApp,
             isManaged: true, configuration: configurationB
@@ -2049,6 +2122,10 @@ enum ExternalInstallTests {
         let recordedLink = root.appendingPathComponent("Recorded Brew/Caskroom/review-recorded/1.0/Nested/Review Protected.app")
         try fm.createDirectory(at: recordedLink.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.createSymbolicLink(at: recordedLink, withDestinationURL: oldApp)
+        try writeRecordedArtifacts(
+            caskroom: recordedLink.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent(),
+            token: "review-recorded", version: "1.0", source: "Nested/Review Protected.app"
+        )
         let loop = recordedLink.deletingLastPathComponent().appendingPathComponent("Loop")
         try fm.createSymbolicLink(at: loop, withDestinationURL: recordedLink.deletingLastPathComponent())
         defaults.setValue(recordedBrew.path, for: Preferences.customUserBrewPath)
@@ -2499,6 +2576,8 @@ enum ExternalInstallTests {
             let directory = prefix.appendingPathComponent("Caskroom/\(token)/1")
             try fm.createDirectory(at: directory, withIntermediateDirectories: true)
             try fm.createSymbolicLink(at: directory.appendingPathComponent("Shared.app"), withDestinationURL: app)
+            try writeRecordedArtifacts(caskroom: directory.deletingLastPathComponent(), token: token,
+                                       version: "1", source: "Shared.app")
         }
         func record(_ token: String) -> CaskRecord {
             CaskRecord(
@@ -2528,6 +2607,43 @@ enum ExternalInstallTests {
         precondition(registry.installedCount == 2 && registry.locallyInstalledCount == 1
                      && registry.externalInstalledCount == 0,
                      "Managed aliases must deduplicate from recorded bundle identity even when external detection is disabled")
+        let storeApp = prefix.appendingPathComponent("User Apps/Shared.app")
+        let storeReceipt = storeApp.appendingPathComponent("Contents/_MASReceipt/receipt")
+        try fm.createDirectory(at: storeReceipt.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: storeReceipt)
+        let provenanceRegistry = CaskViewModelRegistry()
+        let selected = provenanceRegistry.viewModel(for: stable)
+        provenanceRegistry.markInstalled(tokens: [stable.fullToken])
+        let initialSources = try ExternalAppDetector.installations(
+            catalog: [stable], managedTokens: [stable.fullToken],
+            directories: [app.deletingLastPathComponent(), storeApp.deletingLastPathComponent()],
+            recordedAppURLs: [stable.fullToken: [app]]
+        )
+        provenanceRegistry.markExternalInstallations(
+            appURLs: initialSources.externalAppURLs, appStoreAppURLs: initialSources.appStoreAppURLs,
+            bundleURLs: initialSources.bundleURLs, copies: initialSources.additionalInstallations,
+            multipleCopyTokens: initialSources.multipleCopyTokens,
+            selectedCopyProtection: initialSources.selectedCopyProtection
+        )
+        let provenanceLoader = CaskDataLoader(
+            dbService: CaskDatabaseService(databasePool: pool), registry: provenanceRegistry,
+            intuneInventory: { .empty }, artCraftInventory: { .empty }
+        )
+        try await provenanceLoader.refreshExternalInstallations()
+        precondition(selected.installedManagementSourceName == String(localized: "Homebrew")
+                     && selected.protectedAppInstallation?.source == .appStore
+                     && provenanceRegistry.locallyInstalledCount == 1,
+                     "A disabled-detection refresh must retain provenance for the selected Homebrew copy")
+        let stableLink = prefix.appendingPathComponent("Caskroom/stable/1/Shared.app")
+        try fm.removeItem(at: stableLink)
+        try fm.createSymbolicLink(at: stableLink, withDestinationURL: storeApp)
+        try await provenanceLoader.refreshExternalInstallations()
+        precondition(selected.installedManagementSourceName == ProtectedAppInstallation.Source.appStore.name
+                     && provenanceRegistry.locallyInstalledCount == 1
+                     && provenanceRegistry.externalInstalledCount == 0,
+                     "A changed recorded copy must refresh its source without exposing external rows")
+        try fm.removeItem(at: stableLink)
+        try fm.createSymbolicLink(at: stableLink, withDestinationURL: app)
         let secondPrefix = root.appendingPathComponent("Second Homebrew Receipts")
         let secondBrew = secondPrefix.appendingPathComponent("bin/brew")
         try fm.createDirectory(at: secondBrew.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -2717,6 +2833,8 @@ enum ExternalInstallTests {
         let recordedLink = prefix.appendingPathComponent("Caskroom/review-live/1.0/Old.app")
         try fm.createDirectory(at: recordedLink.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.createSymbolicLink(at: recordedLink, withDestinationURL: oldApp)
+        try writeRecordedArtifacts(caskroom: recordedLink.deletingLastPathComponent().deletingLastPathComponent(),
+                                   token: "review-live", version: "1.0", source: "Old.app")
         let receiptList = prefix.appendingPathComponent("receipts")
         try record.fullToken.write(to: receiptList, atomically: true, encoding: .utf8)
         for isBatch in [false, true] {
@@ -2840,6 +2958,7 @@ enum ExternalInstallTests {
             if [ "$token" = "review-missing" ]; then bundle="Missing.app"; fi
             if [ "$token" = "legacy-safe" ]; then bundle="Safe.app"; fi
             case "$token" in mixed-*) bundle="$token.app" ;; esac
+            if [ "$token" = "nested-target" ]; then bundle="Suite/Renamed.app"; fi
             if [ -f "$fixture_dir/missing-artifacts" ]; then
               printf '{"casks":[{"token":"%s","full_token":"%s","tap":"homebrew/cask","homepage":"https://example.test/","url":"https://example.test/app.dmg","deprecated":false,"disabled":false}]}' "$token" "$4"
               exit 0
@@ -2928,6 +3047,12 @@ enum ExternalInstallTests {
         try fm.removeItem(at: prefix.appendingPathComponent("mixed-reconcile"))
         try fm.removeItem(at: prefix.appendingPathComponent("fail-list"))
         try fm.removeItem(at: arguments)
+        let nestedTarget = apps.appendingPathComponent("Suite/Renamed.app")
+        try fm.createDirectory(at: nestedTarget, withIntermediateDirectories: true)
+        let nestedVM = CaskViewModel(record: record("nested-target", bundle: "Suite/Renamed.app"))
+        await service.install(nestedVM).value
+        precondition(nestedVM.progressState.isFailed && !fm.fileExists(atPath: arguments.path),
+                     "Unconfirmed installation must not overwrite an existing nested app target")
         let staleRecord = CaskRecord(
             token: externalRecord.token, fullToken: externalRecord.fullToken, tap: externalRecord.tap,
             name: externalRecord.name, descriptionText: "", homepageURL: nil, pkgInstaller: false,

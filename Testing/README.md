@@ -13,6 +13,8 @@ The selected row's URL remains distinct from protection evidence. With external
 detection disabled, managed aliases still collapse by their recorded bundle path
 without reading external ownership inventories. A paused profile switch verifies
 immediate receipt invalidation, blocked actions, and fresh uninstall receipt checks.
+With detection disabled, an unchanged managed selection retains its provenance;
+a changed recorded target is reclassified without exposing external rows.
 Invalid partial brew paths do not raise a modal alert or unblock writes, and changing
 configuration closes stale details.
 An unavailable ownership inventory is reported separately while receipt and outdated
@@ -23,6 +25,8 @@ Setapp or Intune evidence or changing Homebrew. A two-entry batch also pauses it
 last metadata request to verify the first entry is rechecked. Recorded old-appdir
 targets (including nested staging links and a directory-symlink loop), managed-receipt aliases, separate bundles, and immediate single/bulk
 Installed projection reconciliation use isolated filesystem fixtures.
+Recorded source tests cover receipt artifacts, staged `only_path`, unrelated payload
+apps, and unsafe source paths without recursively traversing Caskroom payloads.
 
 Hidden-self fixtures ensure an external Applite bundle contributes neither a row
 nor a badge. A paused reconciliation also verifies the real operation remains busy
@@ -53,6 +57,8 @@ counts, selected URLs, per-copy source filters, receipt ownership, removal on re
 and blocked Homebrew actions while the target is ambiguous.
 Manually verify an eligible Install button remains usable during installed-state
 refresh, with the operation queued and checked before it starts.
+Nested relative app targets are detected without allowing traversal or absolute targets;
+the catalog migration invalidates older basename-only metadata for re-verification.
 
 These tests use the real app's Debug module, isolated databases, temporary app
 directories, and a temporary fake `brew`. They verify artifact decoding (including
