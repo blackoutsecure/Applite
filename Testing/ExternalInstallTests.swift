@@ -871,6 +871,21 @@ enum ExternalInstallTests {
         )
         precondition(rubyTargets == [otherApp.resolvingSymlinksInPath().standardizedFileURL],
                      "Ruby-only saved casks must use recorded receipt artifacts without evaluating Ruby")
+        try fm.removeItem(at: rubyRoom.appendingPathComponent(".metadata/INSTALL_RECEIPT.json"))
+        let legacyLaunch = try InstalledAppLocator.launchURL(
+            token: "ruby-receipt", displayName: "Ruby Receipt", preferredURL: nil,
+            isManaged: true, configuration: configurationA
+        )
+        precondition(legacyLaunch?.path == otherApp.path,
+                     "Read-only lookup must locate legacy Ruby-only installations without a receipt")
+        do {
+            _ = try InstalledAppLocator.recordedAppURLs(
+                token: "ruby-receipt", caskroom: caskroomA, requireRecordedOwnership: true
+            )
+            preconditionFailure("Legacy Ruby-only installations must fail closed for mutation preflights")
+        } catch CaskAdoptionError.installationTargetsUnavailable { }
+        try JSONSerialization.data(withJSONObject: ["uninstall_artifacts": [["app": ["Source.app"]]]])
+            .write(to: rubyRoom.appendingPathComponent(".metadata/INSTALL_RECEIPT.json"))
         try fm.removeItem(at: rubyLink)
         do {
             _ = try InstalledAppLocator.recordedAppURLs(token: "ruby-receipt", caskroom: caskroomA)
@@ -2611,6 +2626,30 @@ enum ExternalInstallTests {
         await service.install(sibling, confirmedConfiguration: .current).value
         precondition(sibling.progressState.isFailed && !fm.fileExists(atPath: arguments.path),
                      "Unknown managed ownership must fail closed")
+        try Data("cask fixture".utf8).write(to: metadata.appendingPathComponent("stable.rb"))
+        try fm.createSymbolicLink(at: prefix.appendingPathComponent("Caskroom/stable/1/Shared.app"),
+                                  withDestinationURL: managedApp)
+        let unrelated = CaskRecord(
+            token: "unrelated", fullToken: "unrelated", tap: "homebrew/cask", name: "Unrelated",
+            descriptionText: "", homepageURL: nil, pkgInstaller: false, warningType: nil,
+            warningDate: nil, warningReason: nil, downloadsIn365days: 0, appBundleNames: ["Unrelated.app"]
+        )
+        try fm.createDirectory(at: externalDirectory.appendingPathComponent("Unrelated.app"),
+                               withIntermediateDirectories: true)
+        try await pool.write { db in
+            try stable.insert(db)
+            try unrelated.insert(db)
+        }
+        try await loader.refreshInstalled()
+        precondition(registry.viewModel(for: unrelated).isInstalledExternally,
+                     "A legacy Ruby-only receipt must not block unrelated external discovery")
+        await service.install(sibling, confirmedConfiguration: .current).value
+        precondition(sibling.progressState.isFailed && !fm.fileExists(atPath: arguments.path),
+                     "A legacy Ruby-only receipt must still block unverifiable mutation")
+        try Data("invalid metadata".utf8).write(to: metadata.appendingPathComponent("stable.json"))
+        try await loader.refreshInstalled()
+        precondition(registry.viewModel(for: unrelated).isInstalledExternally,
+                     "Malformed metadata for one managed cask must not abort unrelated discovery")
         let receiptRoom = prefix.appendingPathComponent("Caskroom/receipt-cask")
         let staged = receiptRoom.appendingPathComponent("1/Payload")
         let receiptMetadata = receiptRoom.appendingPathComponent(".metadata/1/1/Casks")

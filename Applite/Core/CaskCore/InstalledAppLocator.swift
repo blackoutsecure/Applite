@@ -100,6 +100,7 @@ enum InstalledAppLocator {
             ).sorted { $0.lastPathComponent > $1.lastPathComponent }
             var installed: RecordedCask?
             var receiptOnly = false
+            var rubyWithoutReceipt = false
             for timestamp in timestamps {
                 let values = try timestamp.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
                 guard values.isDirectory == true, values.isSymbolicLink != true else { continue }
@@ -116,9 +117,12 @@ enum InstalledAppLocator {
                 do {
                     let ruby = timestamp.appendingPathComponent("Casks").appendingPathComponent("\(token).rb")
                     let values = try ruby.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-                    guard values.isRegularFile == true, values.isSymbolicLink != true,
-                          let artifacts = receipt?.uninstall_artifacts else {
+                    guard values.isRegularFile == true, values.isSymbolicLink != true else {
                         throw CaskAdoptionError.installationTargetsUnavailable
+                    }
+                    guard let artifacts = receipt?.uninstall_artifacts else {
+                        rubyWithoutReceipt = true
+                        break
                     }
                     installed = RecordedCask(artifacts: artifacts, url_specs: nil)
                     receiptOnly = true
@@ -128,6 +132,10 @@ enum InstalledAppLocator {
                 }
             }
             guard let installed, let artifacts = installed.artifacts ?? receipt?.uninstall_artifacts else {
+                if rubyWithoutReceipt && !requireRecordedOwnership {
+                    logger.warning("Cannot verify recorded ownership for Ruby-only cask \(token, privacy: .public)")
+                    continue
+                }
                 throw CaskAdoptionError.installationTargetsUnavailable
             }
             parsedVersion = true

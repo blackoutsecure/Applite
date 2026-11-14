@@ -207,7 +207,19 @@ final class CaskDataLoader {
         }
         let loadIntuneInventory = self.loadIntuneInventory
         let loadArtCraftInventory = self.loadArtCraftInventory
+        let logger = self.logger
         let task = Task.detached {
+            func recordedURLs(for token: String, caskroom: URL) throws -> [URL] {
+                try Task.checkCancellation()
+                do {
+                    return try InstalledAppLocator.recordedAppURLs(token: token, caskroom: caskroom)
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    logger.error("Could not inspect recorded installation for \(token, privacy: .public): \(error.localizedDescription)")
+                    return []
+                }
+            }
             if !detectionEnabled {
                 guard let caskroom = scanConfiguration.caskroom else {
                     throw CaskAdoptionError.installationTargetsUnavailable
@@ -215,9 +227,7 @@ final class CaskDataLoader {
                 var bundleURLs: [CaskId: URL] = [:]
                 for record in catalog {
                     try Task.checkCancellation()
-                    let recorded = try InstalledAppLocator.recordedAppURLs(
-                        token: record.token, caskroom: caskroom
-                    )
+                    let recorded = try recordedURLs(for: record.token, caskroom: caskroom)
                     if let url = recorded.first ?? ExternalAppDetector.appURL(
                         bundleNames: record.appBundleNames, displayName: record.name,
                         directories: configuration.applicationDirectories
@@ -255,10 +265,7 @@ final class CaskDataLoader {
                 let artCraft = try loadArtCraftInventory()
                 let recorded = try Dictionary(uniqueKeysWithValues: tokens.map { token in
                     try Task.checkCancellation()
-                    return (token, try InstalledAppLocator.recordedAppURLs(
-                        token: (token as NSString).lastPathComponent, caskroom: caskroom,
-                        requireRecordedOwnership: true
-                    ))
+                    return (token, try recordedURLs(for: (token as NSString).lastPathComponent, caskroom: caskroom))
                 })
                 return try ExternalAppDetector.installations(
                     catalog: catalog, managedTokens: tokens,
